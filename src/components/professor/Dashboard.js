@@ -2,33 +2,10 @@ import { useMemo, useState, useCallback } from "react";
 import SessionTable from "./SessionTable";
 import { listProfessorSessions } from "../../services/api";
 import { usePolling } from "../../hooks/usePolling";
-
-// inline icon (no extra deps)
-function RefreshIcon({ className = "" }) {
-	return (
-		<svg
-			className={className}
-			viewBox="0 0 24 24"
-			width="16"
-			height="16"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			aria-hidden="true"
-		>
-			<polyline points="23 4 23 10 17 10" />
-			<polyline points="1 20 1 14 7 14" />
-			<path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10" />
-			<path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14" />
-		</svg>
-	);
-}
+import RefreshIcon from "../ui/RefreshIcon";
 
 export default function Dashboard() {
 	const [rows, setRows] = useState([]);
-	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState("");
 
 	// UI state
@@ -39,7 +16,6 @@ export default function Dashboard() {
 	const pageSize = 20;
 
 	const load = useCallback(async () => {
-		setBusy(true);
 		setError("");
 		try {
 			const data = await listProfessorSessions();
@@ -47,14 +23,14 @@ export default function Dashboard() {
 		} catch (e) {
 			setError(e?.message || "Failed to load sessions");
 		} finally {
-			setBusy(false);
+			// setBusy(false);
 		}
 	}, []);
 
 	// TODO: Not giving me the UI experience I want...
 	// When 'handleRefresh' is called, I want to see the loading spinner.
 	// Auto-refresh every 30s (and run immediately on mount)
-	const { tick, pending } = usePolling({
+	const { tick, pending: isLoading } = usePolling({
 		fn: load,
 		interval: 30000,
 		immediate: true,
@@ -70,7 +46,7 @@ export default function Dashboard() {
 
 	const handleRefresh = () => {
 		// manual one-off refresh
-		void tick({ minDurationMs: 100000 }); // give UI time to update
+		void tick({ minDurationMs: 1000 }); // give UI time to update
 	};
 
 	const handleSearch = (e) => {
@@ -141,7 +117,7 @@ export default function Dashboard() {
 		return sorted.slice(start, start + pageSize);
 	}, [sorted, page, pageSize]);
 
-	const isLoading = busy || pending;
+	// const isLoading = busy || pending;
 
 	return (
 		<div className="p-6">
@@ -174,13 +150,13 @@ export default function Dashboard() {
 			</div>
 
 			{error && <div className="text-sm text-red-600 mb-2">Error: {error}</div>}
-			{busy && !rows.length && (
+			{isLoading && !rows.length && (
 				<div className="text-sm text-gray-500 mb-2">Loading…</div>
 			)}
 
 			<SessionTable
 				rows={paged}
-				busy={busy}
+				busy={isLoading}
 				sortField={sortField}
 				sortDir={sortDir}
 				onSortChange={handleSort}
