@@ -1,0 +1,100 @@
+import React, { useEffect, useRef, useState } from "react";
+import ReactDOM from "react-dom";
+
+export default function InstructionsModal({ open, onClose }) {
+	const root =
+		typeof document !== "undefined"
+			? document.getElementById("modal-root")
+			: null;
+
+	const panelRef = useRef(null);
+	const [mounted, setMounted] = useState(false);
+
+	// Always call hooks; guard side effects inside.
+	useEffect(() => {
+		if (!open || !root) return;
+
+		setMounted(true); // trigger enter animation
+		const prevOverflow = document.body.style.overflow;
+		document.body.style.overflow = "hidden";
+
+		const onKeyDown = (e) => {
+			if (e.key === "Escape") onClose?.();
+		};
+		window.addEventListener("keydown", onKeyDown);
+
+		// Focus dialog for accessibility
+		panelRef.current?.focus();
+
+		return () => {
+			document.body.style.overflow = prevOverflow;
+			window.removeEventListener("keydown", onKeyDown);
+			setMounted(false);
+		};
+	}, [open, root, onClose]);
+
+	const handleBackdropClick = (e) => {
+		if (e.target === e.currentTarget) onClose?.();
+	};
+
+	// If not open or no portal root, render nothing
+	if (!open || !root) return null;
+
+	return ReactDOM.createPortal(
+		<div
+			className={`fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm
+                  transition-opacity duration-200 ${
+										mounted ? "opacity-100" : "opacity-0"
+									}`}
+			onClick={handleBackdropClick}
+			aria-modal="true"
+			role="dialog"
+			aria-labelledby="instructions-title"
+		>
+			<div
+				ref={panelRef}
+				tabIndex="-1"
+				className={`relative max-w-lg w-[92%] sm:w-[32rem] rounded-2xl bg-white shadow-2xl p-6 outline-none
+                    transition-transform transition-opacity duration-200
+                    ${
+											mounted ? "opacity-100 scale-100" : "opacity-0 scale-95"
+										}`}
+			>
+				<button
+					aria-label="Close"
+					onClick={onClose}
+					className="absolute right-3 top-3 rounded-full px-2 py-1 text-gray-500 hover:bg-gray-100"
+				>
+					✕
+				</button>
+
+				<h2
+					id="instructions-title"
+					className="text-xl font-semibold mb-3"
+				>
+					How this works
+				</h2>
+				<ol className="list-decimal ml-5 space-y-2 text-sm text-gray-700">
+					<li>Upload your PDF assignment.</li>
+					<li>Start recording and walk through your slides.</li>
+					<li>
+						When a slide is <em>locked</em>, answer the VC’s two questions to
+						continue.
+					</li>
+					<li>On the last slide, generate your feedback.</li>
+					<li>You can print or export the feedback as a PDF.</li>
+				</ol>
+
+				<div className="mt-5 flex justify-end">
+					<button
+						onClick={onClose}
+						className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+					>
+						Got it
+					</button>
+				</div>
+			</div>
+		</div>,
+		root
+	);
+}
