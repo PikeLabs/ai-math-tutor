@@ -2,7 +2,7 @@ import os
 from flask import Blueprint, jsonify, send_file, request
 from pdf_utils import get_assignment_text, get_assignment_slides_range
 
-bp = Blueprint("assignments", __name__, url_prefix="/api/v1")
+bp = Blueprint("assignments", __name__)
 
 
 @bp.get("/assignments")

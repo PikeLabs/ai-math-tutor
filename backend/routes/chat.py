@@ -5,7 +5,7 @@ from services.ai_service import chat_with_ai, transcribe_audio
 from services.database_service import add_conversation
 from pdf_utils import get_assignment_text
 
-bp = Blueprint("chat", __name__, url_prefix="/api/v1")
+bp = Blueprint("chat", __name__)
 
 
 # TODO: Let's break this into seperate endpoints on /chat for better clarity.

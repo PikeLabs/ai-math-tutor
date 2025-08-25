@@ -2,14 +2,15 @@ from flask import Blueprint, request
 from utils.http import ok, bad_request, not_found
 from utils.parsing import parse_int
 from services.database_service import (
-    create_student,
     create_session,
-    update_session,
+    create_student,
+    list_sessions,
     get_session,
+    update_session,
 )
 
 
-bp = Blueprint("sessions", __name__, url_prefix="/api/v1")
+bp = Blueprint("sessions", __name__)
 
 
 @bp.post("/session/create")
@@ -58,6 +59,16 @@ def api_patch_session(session_id: str):
     updated = update_session(session_id, payload)
 
     return ok(updated.dict())
+
+
+@bp.get("/professor/sessions")
+def api_list_sessions_route():
+    rows = list_sessions()
+    # very basic query params for FE convenience
+    q = (request.args.get("q") or "").lower().strip()
+    if q:
+        rows = [r for r in rows if r.student and q in r.student.name.lower()]
+    return ok([r.dict() for r in rows])
 
 
 @bp.get("/professor/session/<session_id>")

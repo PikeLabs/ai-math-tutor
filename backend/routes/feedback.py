@@ -4,7 +4,7 @@ from utils.parsing import parse_int
 from utils.decorators import require_json
 from services.database_service import save_feedback
 
-bp = Blueprint("feedback", __name__, url_prefix="/api/v1")
+bp = Blueprint("feedback", __name__)
 
 
 @bp.post("/feedback")

@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, send_file, request
 from services.pdf_image_service import get_slide_image_path
 from services.feedback_service import get_audio_segment_path
 
-bp = Blueprint("media", __name__, url_prefix="/api/v1")
+bp = Blueprint("media", __name__)
 
 
 # TODO: Update

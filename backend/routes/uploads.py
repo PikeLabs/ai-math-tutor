@@ -3,7 +3,7 @@ from flask import Blueprint, request, jsonify
 from services.pdf_image_service import save_slide_images, cleanup_old_sessions
 from services.feedback_service import cleanup_old_audio_sessions
 
-bp = Blueprint("uploads", __name__, url_prefix="/api")
+bp = Blueprint("uploads", __name__)
 
 
 @bp.post("/process-upload")

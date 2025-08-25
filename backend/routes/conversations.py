@@ -2,7 +2,7 @@ from flask import Blueprint, request
 from utils.http import ok, bad_request
 from services.database_service import add_conversation, add_conversations_bulk
 
-bp = Blueprint("conversations", __name__, url_prefix="/api/v1")
+bp = Blueprint("conversations", __name__)
 
 
 @bp.post("/session/<session_id>/conversations")
