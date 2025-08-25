@@ -29,13 +29,14 @@ export function convertDbFeedbackToDisplay(feedback) {
 // Export to PDF (lazy import to avoid adding bundle weight upfront)
 export async function exportToPdf(node, sessionId) {
 	try {
-		const [{ jsPDF }, html2canvas] = await Promise.all([
+		const [jspdfMod, h2cMod] = await Promise.all([
 			import("jspdf"),
 			import("html2canvas"),
 		]);
-		// const node = panelRef.current;
-		// if (!node) return;
-		const canvas = await html2canvas.default(node, {
+		const { jsPDF } = jspdfMod;
+		const html2canvas = h2cMod.default;
+
+		const canvas = await html2canvas(node, {
 			scale: 2,
 			useCORS: true,
 			backgroundColor: "#ffffff",
@@ -89,6 +90,6 @@ export async function exportToPdf(node, sessionId) {
 		pdf.save(`feedback_${sessionId.slice(0, 8)}.pdf`);
 	} catch (e) {
 		console.error(e);
-        throw e;
+		throw e;
 	}
 }
