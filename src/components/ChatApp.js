@@ -22,11 +22,14 @@ export default function ChatApp() {
 		recordingTime,
 		formatTime,
 		currentRecordingSegment,
-		interventionState,
-		questionsAsked,
 		handleInterventionResponse,
+		interventionState,
+		messages,
+		questionsAsked,
+		selectedAssignment,
+		setMessages,
 		slideTimestamps,
-	} = useContext(AppContext);
+	} = useAppContext();
     const { sessionId } = useSession();
 
 	const [inputMessage, setInputMessage] = useState("");
