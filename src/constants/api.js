@@ -1,11 +1,14 @@
-export const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
+export const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:5001/api/v1";
+export const IMAGE_BASE = API_BASE.endsWith("/api")
+	? API_BASE.slice(0, -4)
+	: API_BASE;
 
 export const ENDPOINTS = {
 	health: `${API_BASE}/health`,
 	assignments: {
 		list: `${API_BASE}/assignments`,
 		file: (filename) => `${API_BASE}/assignments/${filename}`,
-		slides: (filename) => `${API_BASE}/assignments/${filename}/slides`,
+		slides: (assignment) => `${API_BASE}/assignments/${assignment}/slides`,
 	},
 	chat: `${API_BASE}/chat`,
 	feedback: {
