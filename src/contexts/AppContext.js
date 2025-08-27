@@ -14,10 +14,10 @@ import {
 	postAssignmentSlides,
 } from "../services/api";
 
-export const AppContext = createContext(null);
+const AppContext = createContext(null);
 export const useAppContext = () => useContext(AppContext);
 
-export function AppProvider({ children, sessionId }) {
+export default function AppProvider({ children, sessionId }) {
 
 	// Chat state
 	const [messages, setMessages] = useState([]);

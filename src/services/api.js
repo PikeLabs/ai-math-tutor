@@ -1,5 +1,35 @@
 import { ENDPOINTS } from "../constants";
 
+// --- Auth ---
+export async function professorLogin(password) {
+	const r = await fetch(ENDPOINTS.professor.login, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		credentials: "include",
+		body: JSON.stringify({ password }),
+	});
+	if (!r.ok) throw new Error(`login failed: ${r.status}`);
+	return r.json();
+}
+
+export async function professorLogout() {
+	const r = await fetch(ENDPOINTS.professor.logout, {
+		method: "POST",
+		credentials: "include",
+	});
+	if (!r.ok) throw new Error(`logout failed: ${r.status}`);
+	return r.json();
+}
+
+export async function checkIsProfessor() {
+	const r = await fetch(ENDPOINTS.professor.me, {
+		method: "GET",
+		credentials: "include",
+	});
+	if (!r.ok) throw new Error(`checkIsProfessor failed: ${r.status}`);
+	return r.json();
+}
+
 // --- Sesssions ---
 export async function createSession({ studentName, slideCount, pdfUrl }) {
 	const r = await fetch(ENDPOINTS.session.create, {
@@ -25,13 +55,25 @@ export async function patchSession(
 }
 
 export async function listProfessorSessions() {
-	const r = await fetch(ENDPOINTS.professor.sessions);
+	const r = await fetch(ENDPOINTS.professor.sessions, {
+		credentials: "include",
+		headers: { Accept: "application/json" },
+		cache: "no-store",
+	});
+
+	if (r.status === 401) throw new Error("Unauthorized");
 	if (!r.ok) throw new Error(`listProfessorSessions failed: ${r.status}`);
 	return r.json();
 }
 
 export async function getProfessorSession(id) {
-	const r = await fetch(ENDPOINTS.professor.session(id));
+	const r = await fetch(ENDPOINTS.professor.session(id), {
+		credentials: "include",
+		headers: { Accept: "application/json" },
+		cache: "no-store",
+	});
+
+	if (r.status === 401) throw new Error("Unauthorized");
 	if (!r.ok) throw new Error(`getProfessorSession failed: ${r.status}`);
 	return r.json();
 }
@@ -119,11 +161,35 @@ export async function saveFeedback({
 		}),
 	});
 	if (!r.ok) throw new Error(`saveFeedback failed ${r.status}`);
+	return r;
+}
+
+// Note: Development/testing only
+export async function getTestFeedback() {
+	const r = await fetch(ENDPOINTS.feedback.test);
+	if (!r.ok) throw new Error(`getTestFeedback failed ${r.status}`);
 	return r.json();
 }
 
-export async function loadTestFeedback() {
-	const r = await fetch(ENDPOINTS.feedback.test);
-	if (!r.ok) throw new Error(`loadTestFeedback failed ${r.status}`);
-	return r.json();
-}
+// --- PDF ---
+export const postPdfForSlides = async (formdata) =>
+	await fetch(ENDPOINTS.uploads.process, {
+		method: "POST",
+		body: formdata,
+	});
+
+// --- Slides ---
+// TODO: Add sessionId here and to backend...
+export const postAssignmentSlides = async (
+	assignment,
+	sessionId,
+	{ start, end }
+) =>
+	await fetch(ENDPOINTS.assignments.slides(assignment), {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({
+			start_slide: start,
+			end_slide: end,
+		}),
+	});

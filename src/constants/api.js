@@ -27,6 +27,9 @@ export const ENDPOINTS = {
 		sessions: `${API_BASE}/professor/sessions`,
 		session: (id) => `${API_BASE}/professor/session/${id}`,
 		markReviewed: (id) => `${API_BASE}/professor/session/${id}/reviewed`,
+		login: `${API_BASE}/auth/professor/login`,
+		logout: `${API_BASE}/auth/professor/logout`,
+		me: `${API_BASE}/auth/professor/me`,
 	},
 	session: {
 		create: `${API_BASE}/session/create`,

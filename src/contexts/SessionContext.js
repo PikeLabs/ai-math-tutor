@@ -7,13 +7,12 @@ import React, {
 } from "react";
 
 const SessionCtx = createContext(null);
-const SEEN_KEY = "hasSeenInstructions";
-
 export function useSession() {
 	return useContext(SessionCtx);
 }
 
-export function SessionProvider({ children }) {
+const SEEN_KEY = "hasSeenInstructions";
+export default function SessionProvider({ children }) {
 	const [sessionId, setSessionId] = useState(
 		() => sessionStorage.getItem("sessionId") || ""
 	);
