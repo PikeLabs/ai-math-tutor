@@ -8,3 +8,4 @@ pillow
 pdf2image
 PyPDF2
 gunicorn
+bcrypt
