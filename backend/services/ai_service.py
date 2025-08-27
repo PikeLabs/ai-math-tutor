@@ -5,18 +5,18 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-TRANSCRIBE_MODEL = os.getenv("OPENAI_TRANSCRIBE_MODEL", "whisper-1")
+AI_API_KEY = os.getenv('OPENAI_API_KEY')
 CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-5")  # overridable via env
 MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "15000"))  # hard guard
 MAX_TRANSCRIPT_CHARS = int(
     os.getenv("MAX_TRANSCRIPT_CHARS", "8000")
 )  # optional tighter guard
+TRANSCRIBE_MODEL = os.getenv("OPENAI_TRANSCRIBE_MODEL", "whisper-1")
 
-api_key = os.getenv('OPENAI_API_KEY')
-if not api_key:
+if not AI_API_KEY:
     raise ValueError("OPENAI_API_KEY not found in environment variables")
 
-client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=AI_API_KEY)
 
 SYSTEM_PROMPT = """You are a seasoned VC mentor and entrepreneurship professor giving live, voice-based feedback to a founder who's walking you through a pitch deck.
 

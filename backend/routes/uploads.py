@@ -2,6 +2,7 @@ import os, uuid
 from flask import Blueprint, request, jsonify
 from services.pdf_image_service import save_slide_images, cleanup_old_sessions
 from services.feedback_service import cleanup_old_audio_sessions
+from services.database_service import update_session
 
 bp = Blueprint("uploads", __name__)
 
@@ -15,6 +16,9 @@ def process_upload():
         file = request.files["file"]
         if not file.filename.endswith(".pdf"):
             return jsonify({"error": "File must be a PDF"}), 400
+
+        # Optional: link to existing DB session
+        linked_session_id = request.form.get("sessionId") or None
 
         session_id = str(uuid.uuid4())
 
@@ -39,16 +43,27 @@ def process_upload():
 
         slide_count = len(slide_paths) if slide_paths else actual_page_count
 
+        # If the FE passed a DB sessionId, update that record with pdfUrl/slideCount
+        if linked_session_id:
+            try:
+                update_session(
+                    linked_session_id,
+                    {"pdfUrl": safe_filename, "slideCount": slide_count},
+                )
+            except Exception as e:
+                # Non-fatal: we still return the upload info
+                print(f"⚠️ Failed to update DB session {linked_session_id}: {e}")
+
         return jsonify(
             {
-                "session_id": session_id,
+                "session_id": session_id,  # image/audio processing namespace
                 "slide_count": slide_count,
                 "slides": (
                     list(slide_paths.keys())
                     if slide_paths
                     else list(range(1, slide_count + 1))
                 ),
-                "filename": safe_filename,
+                "filename": safe_filename,  # saved PDF filename
                 "images_processed": bool(slide_paths),
                 "message": "PDF uploaded successfully"
                 + (

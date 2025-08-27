@@ -60,14 +60,10 @@ def api_patch_session(session_id: str):
 
     return ok(updated.dict())
 
-
+# TODO: Get Scores...
 @bp.get("/professor/sessions")
 def api_list_sessions_route():
     rows = list_sessions()
-    # very basic query params for FE convenience
-    q = (request.args.get("q") or "").lower().strip()
-    if q:
-        rows = [r for r in rows if r.student and q in r.student.name.lower()]
     return ok([r.dict() for r in rows])
 
 
