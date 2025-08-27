@@ -9,6 +9,7 @@ from routes.sessions import bp as sessions_bp
 from routes.conversations import bp as conversations_bp
 
 # from routes.professor import bp as professor_bp
+from routes.auth import auth_bp
 from routes.feedback import bp as feedback_api_bp
 from routes.chat import bp as chat_bp
 from routes.assignments import bp as assignments_bp
@@ -23,7 +24,18 @@ API_PREFIX = "/api/v1"
 
 def create_app():
     app = Flask(__name__)
-    CORS(app, origins=["http://localhost:3000"])
+
+    # session config
+    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = (
+        "Lax"  # "None" if cross-site prod with HTTPS
+    )
+    app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("COOKIE_SECURE", ""))
+    FE_ORIGIN = os.environ.get("FE_ORIGIN", "http://localhost:3000")
+    CORS(
+        app, resources={r"/api/*": {"origins": [FE_ORIGIN]}}, supports_credentials=True
+    )
 
     @app.before_request
     def _connect():
@@ -36,7 +48,8 @@ def create_app():
     def _disconnect(exception=None):
         disconnect_db()
 
-    # Register blueprints (all are url_prefix="/api" except health)
+    # Register blueprints (all are url_prefix="/api/v1")
+    app.register_blueprint(auth_bp, url_prefix=API_PREFIX)
     app.register_blueprint(health_bp, url_prefix=API_PREFIX)
     app.register_blueprint(sessions_bp, url_prefix=API_PREFIX)
     app.register_blueprint(conversations_bp, url_prefix=API_PREFIX)

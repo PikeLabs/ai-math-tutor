@@ -1,6 +1,7 @@
 from flask import Blueprint, request
 from utils.http import ok, bad_request, not_found
 from utils.parsing import parse_int
+from middleware.auth import professor_required
 from services.database_service import (
     create_session,
     create_student,
@@ -62,12 +63,14 @@ def api_patch_session(session_id: str):
 
 # TODO: Get Scores...
 @bp.get("/professor/sessions")
+@professor_required
 def api_list_sessions_route():
     rows = list_sessions()
     return ok([r.dict() for r in rows])
 
 
 @bp.get("/professor/session/<session_id>")
+@professor_required
 def api_get_session_route(session_id: str):
     s = get_session(session_id)
     if not s:
