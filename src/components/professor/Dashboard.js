@@ -1,8 +1,9 @@
 import { useMemo, useState, useCallback } from "react";
 import SessionTable from "./SessionTable";
+import RefreshIcon from "../ui/RefreshIcon";
+import LogoutButton from "../ui/LogoutButton";
 import { listProfessorSessions } from "../../services/api";
 import { usePolling } from "../../hooks/usePolling";
-import RefreshIcon from "../ui/RefreshIcon";
 
 export default function Dashboard() {
 	const [rows, setRows] = useState([]);
@@ -121,32 +122,34 @@ export default function Dashboard() {
 
 	return (
 		<div className="p-6">
-			<div className="flex items-center justify-between mb-4">
+			<div className="flex items-center justify-between mb-2">
 				<h1 className="text-xl font-semibold">Professor Dashboard</h1>
-				<div className="flex items-center gap-2 no-print">
-					<input
-						type="search"
-						value={query}
-						onChange={handleSearch}
-						placeholder="Search by student name…"
-						className="border rounded px-3 py-1.5 text-sm"
-						aria-label="Search by student name"
+				<LogoutButton />
+			</div>
+
+			<div className="flex flex-row justify-between gap-2 no-print mb-4">
+				<input
+					type="search"
+					value={query}
+					onChange={handleSearch}
+					placeholder="Search by student name…"
+					className="border rounded px-3 py-1.5 text-sm w-1/4"
+					aria-label="Search by student name"
+				/>
+				<button
+					onClick={handleRefresh}
+					className="px-3 py-1.5 text-sm rounded border flex items-center gap-2"
+					aria-label="Refresh"
+					title="Refresh"
+					disabled={isLoading}
+				>
+					<RefreshIcon
+						className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
 					/>
-					<button
-						onClick={handleRefresh}
-						className="px-3 py-1.5 text-sm rounded border flex items-center gap-2"
-						aria-label="Refresh"
-						title="Refresh"
-						disabled={isLoading}
-					>
-						<RefreshIcon
-							className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
-						/>
-						<span className="hidden sm:inline">
-							{isLoading ? "Refreshing…" : "Refresh"}
-						</span>
-					</button>
-				</div>
+					<span className="hidden sm:inline">
+						{isLoading ? "Refreshing…" : "Refresh"}
+					</span>
+				</button>
 			</div>
 
 			{error && <div className="text-sm text-red-600 mb-2">Error: {error}</div>}
