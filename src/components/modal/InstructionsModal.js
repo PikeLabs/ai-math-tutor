@@ -40,12 +40,12 @@ export default function InstructionsModal({ open, onClose }) {
 	// If not open or no portal root, render nothing
 	if (!open || !root) return null;
 
+	const opacity = mounted ? "opacity-100" : "opacity-0";
+	const scale = mounted ? "scale-100" : "scale-95";
 	return ReactDOM.createPortal(
 		<div
 			className={`fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm
-                  transition-opacity duration-200 ${
-										mounted ? "opacity-100" : "opacity-0"
-									}`}
+                  transition-opacity duration-200 ${opacity}`}
 			onClick={handleBackdropClick}
 			aria-modal="true"
 			role="dialog"
@@ -55,10 +55,7 @@ export default function InstructionsModal({ open, onClose }) {
 				ref={panelRef}
 				tabIndex="-1"
 				className={`relative max-w-lg w-[92%] sm:w-[32rem] rounded-2xl bg-white shadow-2xl p-6 outline-none
-                    transition-transform transition-opacity duration-200
-                    ${
-											mounted ? "opacity-100 scale-100" : "opacity-0 scale-95"
-										}`}
+                    transition-transform transition-opacity duration-200 ${opacity} ${scale}`}
 			>
 				<button
 					aria-label="Close"
@@ -67,7 +64,6 @@ export default function InstructionsModal({ open, onClose }) {
 				>
 					✕
 				</button>
-
 				<h2
 					id="instructions-title"
 					className="text-xl font-semibold mb-3"
@@ -75,16 +71,14 @@ export default function InstructionsModal({ open, onClose }) {
 					How this works
 				</h2>
 				<ol className="list-decimal ml-5 space-y-2 text-sm text-gray-700">
-					<li>Upload your PDF assignment.</li>
-					<li>Start recording and walk through your slides.</li>
+					<li>1. Upload the slide deck for your presentation.</li>
+					<li>2. Start the recording and begin presenting.</li>
 					<li>
-						When a slide is <em>locked</em>, answer the VC’s two questions to
-						continue.
+						3. Every few slides, your professor will interrupt with questions.
+						You must answer before you can continue.
 					</li>
-					<li>On the last slide, generate your feedback.</li>
-					<li>You can print or export the feedback as a PDF.</li>
+					<li>4. At the end, you’ll receive feedback on your presentation.</li>
 				</ol>
-
 				<div className="mt-5 flex justify-end">
 					<button
 						onClick={onClose}
