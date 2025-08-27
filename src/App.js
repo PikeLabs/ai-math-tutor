@@ -4,7 +4,10 @@ import PDFViewer from "./PDFViewer";
 import { useSession } from "./contexts/SessionContext";
 
 // import Feedback from "./Feedback";
-import { AppProvider } from "./contexts/AppContext";
+import AppProvider from "./contexts/AppContext";
+import AuthProvider from "./contexts/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
+import Login from "./components/professor/Login";
 import RequireSession from "./components/RequireSession";
 import StudentNameInput from "./components/StudentNameInput";
 import ChatApp from "./components/ChatApp";
@@ -24,6 +27,21 @@ function AppShell({ sessionId, hasSeenInstructions, markInstructionsSeen }) {
 					path="/"
 					element={<LandingPage />}
 				/>
+				<Route
+					path="/professor"
+					element={<Login />}
+				/>
+				<Route element={<ProtectedRoute />}>
+					<Route
+						path="/professor/dashboard"
+						element={<Dashboard />}
+					/>
+					{/* TODO: Sessions should be SessionDetail and reflect the old Feedback Display */}
+					<Route
+						path="/professor/session/:id"
+						element={<Sessions />}
+					/>
+				</Route>
 
 				<Route
 					path="/start"
@@ -53,15 +71,6 @@ function AppShell({ sessionId, hasSeenInstructions, markInstructionsSeen }) {
 				/>
 
 				<Route
-					path="/professor"
-					element={<Dashboard />}
-				/>
-				{/* TODO: Sessions should be SessionDetail and reflect the old Feedback Display */}
-				<Route
-					path="/professor/session/:id"
-					element={<Sessions />}
-				/>
-				<Route
 					path="/feedback"
 					element={<FeedbackPage />}
 				/>
@@ -73,12 +82,14 @@ function AppShell({ sessionId, hasSeenInstructions, markInstructionsSeen }) {
 export default function App() {
 	const { sessionId, hasSeenInstructions, markInstructionsSeen } = useSession();
 	return (
-		<AppProvider sessionId={sessionId}>
-			<AppShell
-				sessionId={sessionId}
-				hasSeenInstructions={hasSeenInstructions}
-				markInstructionsSeen={markInstructionsSeen}
-			/>
-		</AppProvider>
+		<AuthProvider>
+			<AppProvider sessionId={sessionId}>
+				<AppShell
+					sessionId={sessionId}
+					hasSeenInstructions={hasSeenInstructions}
+					markInstructionsSeen={markInstructionsSeen}
+				/>
+			</AppProvider>
+		</AuthProvider>
 	);
 }

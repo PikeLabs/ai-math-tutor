@@ -60,7 +60,7 @@ export default function LandingPage() {
 					>
 						<div className="text-lg font-semibold mb-1">Professor</div>
 						<p className="text-sm text-gray-600">
-							Review sessions, transcripts, and feedback.
+							Log in to view student sessions
 						</p>
 					</button>
 				</div>
