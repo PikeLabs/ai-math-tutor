@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 
-import { useSession } from "../contexts/SessionContext";
-import { useAppContext } from "../contexts/AppContext";
 import TTSService from "../TTSService";
 import Avatar from "../Avatar";
+import { useSession } from "../contexts/SessionContext";
+import { useAppContext } from "../contexts/AppContext";
+import { generateFeedbackMultipart } from "../services/api";
 
 function IncomingChatMessages({ messages, isLoading }) {
 	let messageContent = null;
@@ -169,27 +170,17 @@ export default function ChatApp() {
 			formData.append("pdfSlideCount", pdfSlideCount || "");
 			formData.append("sessionId", sessionId);
 
-			const response = await fetch("http://localhost:5001/api/feedback", {
-				method: "POST",
-				body: formData,
-			});
-
+			const response = await generateFeedbackMultipart(formData);
 			const data = await response.json();
 
-			if (response.ok) {
-				console.log("Feedback response:", data);
-				if (data.session_id || data.slides || data.feedback) {
-					// New structured format or legacy format
-					const feedbackToStore = data.feedback || JSON.stringify(data);
-					localStorage.setItem("pitchFeedback", feedbackToStore);
-					setFeedbackGenerated(true);
-					alert("Feedback generated! Navigate to /feedback to view it.");
-				} else {
-					alert("Error: No feedback received from server");
-				}
+			if (data.session_id || data.slides || data.feedback) {
+				// New structured format or legacy format
+				const feedbackToStore = data.feedback || JSON.stringify(data);
+				localStorage.setItem("pitchFeedback", feedbackToStore);
+				setFeedbackGenerated(true);
+				alert("Feedback generated! Navigate to /feedback to view it.");
 			} else {
-				console.error("Feedback error:", data);
-				alert(`Error generating feedback: ${data.error || "Unknown error"}`);
+				alert("Error: No feedback received from server");
 			}
 		} catch (err) {
 			alert(`Error generating feedback: ${err.message}`);

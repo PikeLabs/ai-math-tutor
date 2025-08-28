@@ -12,7 +12,8 @@ export const ENDPOINTS = {
 	},
 	chat: `${API_BASE}/chat`,
 	feedback: {
-		create: `${API_BASE}/feedback`,
+		create: `${API_BASE}/feedback`, // plain save
+		generate: `${API_BASE}/feedback/generate`, // generate & save
 		test: `${API_BASE}/feedback/test`,
 	},
 	media: {

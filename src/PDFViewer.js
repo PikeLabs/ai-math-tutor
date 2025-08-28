@@ -4,7 +4,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
 import RecordPromptModal from "./components/modal/RecordPromptModal";
-import RecordingIcon from "./components/ui/RecordingIcon";
+import { PausedIcon, RecordingIcon } from "./components/ui/RecordingIcon";
 import { postPdfForSlides } from "./services/api";
 import { useAppContext } from "./contexts/AppContext";
 import { formatTime } from "./utils/recording.utils";
@@ -13,10 +13,9 @@ import { formatTime } from "./utils/recording.utils";
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
 
 function RecordingStatus({ isRecording, isPaused, recordingTime }) {
+	const textStyles = "text-md font-medium";
 	let recordingStatus = (
-		<div className="px-4 py-2 text-gray-600 font-medium">
-			Waiting to start...
-		</div>
+		<div className={`${textStyles} text-gray-500`}>Waiting to start...</div>
 	);
 	let formattedTime =
 		isPaused || isRecording ? formatTime(recordingTime) : null;
@@ -24,24 +23,28 @@ function RecordingStatus({ isRecording, isPaused, recordingTime }) {
 	// Paused status
 	if (isPaused) {
 		recordingStatus = (
-			<div className="px-4 py-2 rounded-md bg-gray-600 border border-gray-300 text-white font-medium">
-				Recording Paused
-			</div>
-		);
-		formattedTime = (
-			<span className="ml-3 text-sm text-gray-600">{formattedTime}</span>
+			<>
+				{/* <div className={`${textStyles} text-white`}>Recording Paused</div> */}
+				<PausedIcon />
+				<span className="ml-3 text-md font-medium text-gray-400">
+					{formattedTime}
+				</span>
+			</>
 		);
 	} else if (isRecording) {
-		recordingStatus = <RecordingIcon />;
-		formattedTime = (
-			<span className="ml-3 text-sm text-red-600">{formattedTime}</span>
+		recordingStatus = (
+			<>
+				<RecordingIcon />
+				<span className="ml-3 text-md font-medium text-red-600">
+					{formattedTime}
+				</span>
+			</>
 		);
 	}
 
 	return (
 		<div className="w-full flex items-center justify-center py-3">
 			{recordingStatus}
-			{formattedTime}
 		</div>
 	);
 }
@@ -137,11 +140,6 @@ export default function PDFViewer() {
 			// Initialize timestamps with slide 1
 			const initialTimestamp = { slideNumber: 1, timestamp: 0 };
 			setSlideTimestamps([initialTimestamp]);
-
-			// Notify parent of timestamp changes
-			if (onSlideTimestampsChange) {
-				onSlideTimestampsChange([initialTimestamp]);
-			}
 		} else if (!isRecording && !isPaused && recordingStartTime) {
 			// Only reset when not recording AND not paused (i.e., truly ended)
 			setRecordingStartTime(null);
@@ -149,6 +147,12 @@ export default function PDFViewer() {
 			console.log("📊 Recording timestamp tracking reset");
 		}
 	}, [isRecording, isPaused, recordingStartTime, onSlideTimestampsChange]);
+
+	useEffect(() => {
+		if (slideTimestamps.length) {
+			onSlideTimestampsChange?.(slideTimestamps);
+		}
+	}, [slideTimestamps, onSlideTimestampsChange]);
 
 	const FILE_TYPE_PDF = "application/pdf";
 	const handleFileUpload = async (event) => {
@@ -173,6 +177,9 @@ export default function PDFViewer() {
 				const data = await response.json();
 
 				if (response.ok) {
+					// // Only way to start recording is via this modal
+					// setShowRecordModal(true);
+
 					console.log("✅ PDF processed successfully:", data);
 					// Store session ID for later use in feedback
 					localStorage.setItem("currentPDFSession", data.session_id);
@@ -182,9 +189,6 @@ export default function PDFViewer() {
 					if (onAssignmentChange) {
 						onAssignmentChange(data.filename); // Use the safe filename that was saved to assignments
 					}
-
-					// Only way to start recording is via this modal
-					setShowRecordModal(true);
 				} else {
 					console.error("❌ PDF processing failed:", data.error);
 					setError(`Failed to process PDF: ${data.error}`);
@@ -204,11 +208,14 @@ export default function PDFViewer() {
 		console.log("PDF loaded successfully with", numPages, "pages");
 		setNumPages(numPages);
 		setPageNumber(1);
-		setLoading(false);
 		setError(null);
 		setIsLocked(false); // Reset lock state on new document
 		setUnlockedSlides(new Set()); // Reset unlocked slides tracking
 		setLockTriggerSlides([numPages]); // Set lock to trigger only on the last page
+
+		// Only way to start recording is via this modal
+		setShowRecordModal(true);
+		setLoading(false);
 	};
 
 	const onDocumentLoadError = (error) => {
@@ -217,7 +224,6 @@ export default function PDFViewer() {
 		setLoading(false);
 	};
 
-	// Remove handleAssignmentChange since we're using file upload
 	const changePage = (offset) => {
 		const newPageNumber = Math.max(1, Math.min(numPages, pageNumber + offset));
 
@@ -257,10 +263,6 @@ export default function PDFViewer() {
 
 			setSlideTimestamps((prev) => {
 				const updated = [...prev, newTimestamp];
-				// Notify parent of timestamp changes
-				if (onSlideTimestampsChange) {
-					onSlideTimestampsChange(updated);
-				}
 				return updated;
 			});
 

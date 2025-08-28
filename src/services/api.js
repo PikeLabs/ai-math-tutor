@@ -164,6 +164,27 @@ export async function saveFeedback({
 	return r;
 }
 
+// src/services/api.js
+export async function generateFeedbackMultipart(formData) {
+	const r = await fetch(ENDPOINTS.feedback.generate, {
+		method: "POST",
+		body: formData, // includes recording blob if present
+	});
+	if (!r.ok) throw new Error(`generateFeedback failed ${r.status}`);
+	return r;
+}
+
+// (optional JSON variant if you ever want to generate without audio)
+export async function generateFeedbackJSON(payload) {
+	const r = await fetch(ENDPOINTS.feedback.generate, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(payload),
+	});
+	if (!r.ok) throw new Error(`generateFeedback (json) failed ${r.status}`);
+	return r;
+}
+
 // Note: Development/testing only
 export async function getTestFeedback() {
 	const r = await fetch(ENDPOINTS.feedback.test);
