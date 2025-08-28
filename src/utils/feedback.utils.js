@@ -17,7 +17,9 @@ export function convertDbFeedbackToDisplay(feedback) {
 	if (feedback.improvements) {
 		parts.push(`\nImprovements:\n${feedback.improvements}`);
 	}
+
 	const text = parts.join("\n").trim();
+
 	return {
 		feedback_type: "legacy",
 		slides: [],

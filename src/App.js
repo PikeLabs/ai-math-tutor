@@ -1,25 +1,23 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import PDFViewer from "./PDFViewer";
-
-import { useSession } from "./contexts/SessionContext";
 
 // import Feedback from "./Feedback";
 import AppProvider from "./contexts/AppContext";
 import AuthProvider from "./contexts/AuthContext";
-import ProtectedRoute from "./components/ProtectedRoute";
-import Login from "./components/professor/Login";
-import RequireSession from "./components/RequireSession";
-import StudentNameInput from "./components/StudentNameInput";
-import ChatApp from "./components/ChatApp";
+
 import Dashboard from "./components/professor/Dashboard";
-import Sessions from "./components/professor/Sessions";
 import FeedbackPage from "./pages/FeedbackPage";
 import LandingPage from "./components/LandingPage";
-import InstructionsModal from "./components/modal/InstructionsModal";
+import Login from "./components/professor/Login";
+import ProtectedRoute from "./components/ProtectedRoute";
+import RequireSession from "./components/RequireSession";
+import Sessions from "./components/professor/Sessions";
+import StudentFlow from "./components/student/StudentFlow";
+import StudentNameInput from "./components/StudentNameInput";
+import { useSession } from "./contexts/SessionContext";
 
 import "./App.css";
 
-function AppShell({ sessionId, hasSeenInstructions, markInstructionsSeen }) {
+function AppRoutes() {
 	return (
 		<Router>
 			<Routes>
@@ -51,21 +49,7 @@ function AppShell({ sessionId, hasSeenInstructions, markInstructionsSeen }) {
 					path="/student"
 					element={
 						<RequireSession>
-							<div className="App">
-								<InstructionsModal
-									open={!hasSeenInstructions}
-									onClose={markInstructionsSeen}
-								/>
-								<div className="split-screen-container">
-									<div className="pdf-panel">
-										<PDFViewer />
-									</div>
-
-									<div className="chat-panel">
-										<ChatApp />
-									</div>
-								</div>
-							</div>
+							<StudentFlow />
 						</RequireSession>
 					}
 				/>
@@ -80,15 +64,11 @@ function AppShell({ sessionId, hasSeenInstructions, markInstructionsSeen }) {
 }
 
 export default function App() {
-	const { sessionId, hasSeenInstructions, markInstructionsSeen } = useSession();
+	const { sessionId } = useSession();
 	return (
 		<AuthProvider>
 			<AppProvider sessionId={sessionId}>
-				<AppShell
-					sessionId={sessionId}
-					hasSeenInstructions={hasSeenInstructions}
-					markInstructionsSeen={markInstructionsSeen}
-				/>
+				<AppRoutes />
 			</AppProvider>
 		</AuthProvider>
 	);

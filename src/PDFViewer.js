@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
-import TTSService from "./TTSService";
 import RecordPromptModal from "./components/modal/RecordPromptModal";
+import RecordingIcon from "./components/ui/RecordingIcon";
 import { postPdfForSlides } from "./services/api";
 import { useAppContext } from "./contexts/AppContext";
 import { formatTime } from "./utils/recording.utils";
@@ -13,51 +13,78 @@ import { formatTime } from "./utils/recording.utils";
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
 
 function RecordingStatus({ isRecording, isPaused, recordingTime }) {
-	let content = (
-		<div className="w-full flex items-center justify-center py-3">
-			<button
-				disabled
-				className="px-4 py-2 rounded-md bg-gray-100 text-gray-500 border border-gray-300 cursor-not-allowed"
-			>
-				Waiting to start...
-			</button>
+	let recordingStatus = (
+		<div className="px-4 py-2 text-gray-600 font-medium">
+			Waiting to start...
 		</div>
 	);
+	let formattedTime =
+		isPaused || isRecording ? formatTime(recordingTime) : null;
 
-	if (isRecording || isPaused) {
-		const buttonClass = isPaused
-			? "bg-gray-100 text-gray-700 border-gray-300 rounded-md"
-			: "rounded-full bg-red-600 text-white font-semibold";
-		const buttonText = isPaused ? "Recording Paused" : "Recording in Progress";
-		const formattedTime = formatTime(recordingTime);
-		content = (
-			<div className="w-full flex items-center justify-center py-3">
-				<button
-					disabled
-					className={`px-4 py-2 border ${buttonClass} cursor-not-allowed`}
-				>
-					{buttonText}
-				</button>
-				<span className="ml-3 text-sm text-gray-600">{formattedTime}</span>
+	// Paused status
+	if (isPaused) {
+		recordingStatus = (
+			<div className="px-4 py-2 rounded-md bg-gray-600 border border-gray-300 text-white font-medium">
+				Recording Paused
 			</div>
+		);
+		formattedTime = (
+			<span className="ml-3 text-sm text-gray-600">{formattedTime}</span>
+		);
+	} else if (isRecording) {
+		recordingStatus = <RecordingIcon />;
+		formattedTime = (
+			<span className="ml-3 text-sm text-red-600">{formattedTime}</span>
 		);
 	}
 
-	return content;
+	return (
+		<div className="w-full flex items-center justify-center py-3">
+			{recordingStatus}
+			{formattedTime}
+		</div>
+	);
+}
+
+function AdvanceSlideButton({
+	pageNumber,
+	numPages,
+	disabled,
+	handleFinishButton,
+	handleNextPage,
+}) {
+	const isLastPage = numPages ? pageNumber === numPages : false;
+
+	const nextButton = (
+		<button
+			className="control-btn"
+			disabled={disabled}
+			onClick={handleNextPage}
+		>
+			Next
+		</button>
+	);
+
+	const finishButton = (
+		<button
+			className="control-btn"
+			disabled={disabled}
+			onClick={handleFinishButton}
+		>
+			Finish
+		</button>
+	);
+
+	return isLastPage ? finishButton : nextButton;
 }
 
 export default function PDFViewer() {
 	const {
 		autoUnlockReady,
-		currentRecordingSegment,
-		getLatestRecording,
 		isPaused,
 		isRecording,
-		pauseRecording,
 		recordingTime,
-		resumeRecording,
 		startRecording,
-		stopRecording,
 		setSelectedAssignment: onAssignmentChange,
 		handleSlideAdvance: onSlideAdvance,
 		handleSlideLockTriggered: onSlideLockTriggered,
@@ -83,8 +110,8 @@ export default function PDFViewer() {
 
 	// show modal after successful upload
 	const [showRecordModal, setShowRecordModal] = useState(false);
-	// track AI-driven pause to auto-resume when speaking ends
-	const pausedByAIRef = useRef(false);
+
+	// TODO: Test this flow
 	// ref to hidden replace-file input (for "upload different file")
 	const replaceInputRef = useRef(null);
 
@@ -122,31 +149,6 @@ export default function PDFViewer() {
 			console.log("📊 Recording timestamp tracking reset");
 		}
 	}, [isRecording, isPaused, recordingStartTime, onSlideTimestampsChange]);
-
-	//pause/resume based on TTS speaking state
-	useEffect(() => {
-		const handleTTSStateChange = (state) => {
-			if (state?.isSpeaking) {
-				if (isRecording && !isPaused) {
-					pauseRecording?.();
-					pausedByAIRef.current = true;
-				}
-			} else {
-				// speaking stopped
-				if (pausedByAIRef.current) {
-					// auto-resume only if we paused due to AI
-					resumeRecording?.();
-					pausedByAIRef.current = false;
-				}
-			}
-		};
-
-		TTSService.addListener(handleTTSStateChange);
-		return () => {
-			TTSService.removeListener(handleTTSStateChange);
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [isRecording, isPaused, pauseRecording, resumeRecording]);
 
 	const FILE_TYPE_PDF = "application/pdf";
 	const handleFileUpload = async (event) => {
@@ -306,14 +308,26 @@ export default function PDFViewer() {
 		setShowRecordModal(false);
 	};
 
-	console.log("Current Recording Segment:", currentRecordingSegment);
-	console.log("Is Paused:", isPaused);
-	console.log("isSpeaking:", TTSService.isSpeaking);
+	const handleNextPage = () => changePage(1);
+
+	const handleFinishButton = async () => {
+		if (pageNumber !== numPages) return;
+
+		setIsLocked(true);
+		if (onSlideLockTriggered) {
+			onSlideLockTriggered(pageNumber); // no blob → context will pauseRecording()
+		}
+	};
+
+	const handleCloseRecordingModal = () => {
+		setShowRecordModal(false);
+	};
+
 	return (
 		<div className="pdf-viewer">
 			<RecordPromptModal
 				open={showRecordModal}
-				onClose={() => setShowRecordModal(false)}
+				onClose={handleCloseRecordingModal}
 				onStart={handleStartFromModal}
 				onUploadDifferent={handleUploadDifferent}
 			/>
@@ -378,66 +392,13 @@ export default function PDFViewer() {
 							<span className="page-info">
 								Page {pageNumber} of {numPages || "?"}
 							</span>
-							<button
-								onClick={async () => {
-									if (pageNumber === numPages) {
-										// This is the Finish button functionality
-										console.log(
-											"🎙️ Finish clicked - starting VC conversation!"
-										);
-										console.log("📊 Is currently recording:", isRecording);
-										console.log(
-											"📁 Current recording segment:",
-											currentRecordingSegment
-										);
-										console.log(
-											"📊 Recording segment type:",
-											currentRecordingSegment?.constructor?.name
-										);
-										console.log(
-											"📏 Recording segment size:",
-											currentRecordingSegment?.size,
-											"bytes"
-										);
-
-										setIsLocked(true);
-
-										// If recording is active, stop it and get the latest recording
-										if (isRecording && stopRecording && getLatestRecording) {
-											console.log("🛑 Stopping recording to capture audio...");
-											const latestRecording = await getLatestRecording();
-											console.log(
-												"🎵 Latest recording captured:",
-												latestRecording
-											);
-											console.log(
-												"📏 Latest recording size:",
-												latestRecording?.size,
-												"bytes"
-											);
-
-											if (onSlideLockTriggered) {
-												onSlideLockTriggered(pageNumber, latestRecording);
-											}
-										} else {
-											// No active recording, proceed with existing segment
-											if (onSlideLockTriggered) {
-												onSlideLockTriggered(
-													pageNumber,
-													currentRecordingSegment
-												);
-											}
-										}
-									} else {
-										// Regular Next button functionality
-										changePage(1);
-									}
-								}}
+							<AdvanceSlideButton
+								pageNumber={pageNumber}
+								numPages={numPages}
 								disabled={isLocked || !isRecording}
-								className="control-btn"
-							>
-								{pageNumber === numPages ? "Finish" : "Next"}
-							</button>
+								handleFinishButton={handleFinishButton}
+								handleNextPage={handleNextPage}
+							/>
 
 							{/* Lock indicator and control */}
 							<div className="lock-controls">
