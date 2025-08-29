@@ -3,7 +3,7 @@ from flask import Flask
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from services.db import connect_db, disconnect_db
+from config.prisma import connect_db, disconnect_db
 from routes.health import bp as health_bp
 from routes.sessions import bp as sessions_bp
 from routes.conversations import bp as conversations_bp
@@ -17,7 +17,8 @@ from routes.media import bp as media_bp
 from routes.uploads import bp as uploads_bp
 
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+# This tells the program to look for the .env file in the same folder as this file.
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 API_PREFIX = "/api/v1"
 
@@ -26,24 +27,28 @@ def create_app():
     app = Flask(__name__)
 
     # session config
+    cookie_samesite = os.environ.get("COOKIE_SAMESITE", "Lax")
+    cookie_secure = os.environ.get("COOKIE_SECURE", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
     app.config["SESSION_COOKIE_HTTPONLY"] = True
-    app.config["SESSION_COOKIE_SAMESITE"] = (
-        "Lax"  # "None" if cross-site prod with HTTPS
-    )
-    app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("COOKIE_SECURE", ""))
+    app.config["SESSION_COOKIE_SAMESITE"] = cookie_samesite
+    app.config["SESSION_COOKIE_SECURE"] = cookie_secure
+
     FE_ORIGIN = os.environ.get("FE_ORIGIN", "http://localhost:3000")
-    CORS(
-        app, resources={r"/api/*": {"origins": [FE_ORIGIN]}}, supports_credentials=True
-    )
+    FE_ORIGIN_EXTRA = os.environ.get("FE_ORIGINS_EXTRA", "")
+
+    raw_extras = [o.strip() for o in FE_ORIGIN_EXTRA.split(",")] if FE_ORIGIN_EXTRA else []
+    origins = [FE_ORIGIN.strip(), *[o for o in raw_extras if o]]
+    CORS(app, resources={r"/api/*": {"origins": origins}}, supports_credentials=True)
 
     @app.before_request
     def _connect():
         connect_db()
 
-    # @app.teardown_appcontext
-    # def shutdown_session(exception=None):
-    #     disconnect_db()
     @app.teardown_appcontext
     def _disconnect(exception=None):
         disconnect_db()
