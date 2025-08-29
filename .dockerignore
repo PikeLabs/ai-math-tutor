@@ -1,0 +1,44 @@
+.git
+.gitignore
+.vscode
+
+# Python (backend)
+.Python
+*.pyd
+*.pyc
+*.pyo
+__pycache__/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+backend/.venv/
+backend/venv/
+backend/.tox/
+
+
+# Env & compose
+.env
+.env.*
+backend/.env
+docker-compose*.yml
+
+# Frontend (React)
+node_modules
+**/node_modules
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+dist
+build
+.next
+.vercel
+
+# Runtime/output dirs you mount at runtime
+**/slide_images/
+**/assignments/
+**/audio_sessions/
+
+# Don't copy any of the backend code into the docker image
+/backend

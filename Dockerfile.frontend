@@ -1,0 +1,22 @@
+# Dockerfile.frontend
+FROM node:20-slim
+
+WORKDIR /app
+
+# Only copy package files first for better caching
+COPY package.json package-lock.json* ./
+
+# Install deps
+RUN npm ci || npm install
+
+# Copy the rest of the frontend (your React app is at root: src/, public/)
+COPY . .
+
+# Expose CRA dev server port
+EXPOSE 3000
+
+# CRA binds to 0.0.0.0 for container access
+ENV HOST=0.0.0.0
+
+
+CMD ["npx", "react-scripts", "start"]
