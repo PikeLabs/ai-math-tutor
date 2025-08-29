@@ -11,7 +11,7 @@ import {
 import TTSService from "../TTSService";
 import {
 	createChat,
-	createFormChat,
+	createChatWithAudio,
 	postAssignmentSlides,
 } from "../services/api";
 import {
@@ -46,6 +46,7 @@ export default function AppProvider({ children, sessionId }) {
 
 	// Slide timestamps
 	const [slideTimestamps, setSlideTimestamps] = useState([]);
+	const [qaTimestamps, setQaTimestamps] = useState([]);
 
 	// track live values to avoid stale closures
 	const recRef = useRef(isRecording);
@@ -64,25 +65,26 @@ export default function AppProvider({ children, sessionId }) {
 					userResponse,
 					currentSlideRange
 				);
+
 				const conversationMessages = [
 					...messages,
 					{ role: "user", content: followUpContext },
 				];
-				const resp = await createChat({
+
+				const data = await createChat({
 					sessionId,
 					messages: conversationMessages,
 					selectedAssignment,
 				});
-				const data = await resp.json();
-				if (resp.ok) {
+
+				if (data?.response) {
 					const followUpQuestion = {
 						role: "assistant",
 						content: data.response,
 					};
+
 					setMessages((prev) => [...prev, followUpQuestion]);
 					TTSService.speak(data.response);
-				} else {
-					console.error("Failed to generate follow-up question:", data.error);
 				}
 			} catch (err) {
 				console.error("Failed to generate follow-up question:", err);
@@ -103,10 +105,14 @@ export default function AppProvider({ children, sessionId }) {
 					setInterventionState("complete");
 					setAutoUnlockReady(true);
 
+					// TODO: Should we have a diff message for the end?
+					const vc_completion_response =
+						"Thanks for those answers! Your feedback is being generated now.";
+					// const vc_completion_response =
+					// 	"Thanks for those answers! You can continue with your presentation now.";
 					const completionMessage = {
 						role: "assistant",
-						content:
-							"Thanks for those answers! You can continue with your presentation now.",
+						content: vc_completion_response,
 					};
 					setMessages((prev) => [...prev, completionMessage]);
 					TTSService.speak(completionMessage.content);
@@ -158,13 +164,28 @@ export default function AppProvider({ children, sessionId }) {
 		awaitingAnswerRef.current = false;
 		pauseRecording?.();
 
+		if (answerStartRef.current != null) {
+			const start = answerStartRef.current;
+			const end = recordingTime;
+
+			if (end > start) {
+				setQaTimestamps((prev) => [...prev, { start, end }]);
+			}
+			answerStartRef.current = null;
+		}
+
 		// Advance the intervention flow: ask follow-up (Q2) or finish.
 		try {
 			await handleInterventionResponse("[voice answer]", currentSlideRange);
 		} catch (e) {
 			console.error("Failed to advance after VAD silence:", e);
 		}
-	}, [pauseRecording, handleInterventionResponse, currentSlideRange]);
+	}, [
+		pauseRecording,
+		handleInterventionResponse,
+		currentSlideRange,
+		recordingTime,
+	]);
 
 	// VAD hook listens to user mic and triggers onSilence when they stop talking
 	const {
@@ -173,10 +194,10 @@ export default function AppProvider({ children, sessionId }) {
 		arm: armVAD,
 	} = useVAD({
 		onSilence: onUserStoppedTalking,
-		threshold: 0.03, // can tweak 0.02–0.05
-		silenceMs: 1500, // can tweak 1200–2000
-		calibrationMs: 300,
-		pollMs: 100,
+		// threshold: 0.03, // can tweak 0.02–0.05
+		// silenceMs: 1500, // can tweak 1200–2000
+		// calibrationMs: 300,
+		// pollMs: 100,
 		shouldCount: () => recRef.current && !pausedRef.current,
 	});
 
@@ -299,7 +320,8 @@ export default function AppProvider({ children, sessionId }) {
 					{ role: "user", content: contextMessage },
 				];
 
-				let response;
+				// let response;
+				let data;
 
 				// If we have an audio segment, send as multipart form data
 				if (audioSegment && audioSegment instanceof Blob) {
@@ -311,10 +333,10 @@ export default function AppProvider({ children, sessionId }) {
 					formData.append("sessionId", sessionId || ""); // Include session ID if available
 					formData.append("slideNumber", String(slideRange?.end || ""));
 
-					response = await createFormChat(formData);
+					data = await createChatWithAudio(formData);
 				} else {
 					console.log("⚠️ No audio segment found, sending without audio...");
-					response = await createChat({
+					data = await createChat({
 						sessionId,
 						messages: interventionMessages,
 						selectedAssignment,
@@ -322,9 +344,9 @@ export default function AppProvider({ children, sessionId }) {
 					});
 				}
 
-				const data = await response.json();
+				// const data = await response.json();
 
-				if (response.ok) {
+				if (data?.response) {
 					// Add the AI's first VC question to the chat automatically
 					const aiQuestion = { role: "assistant", content: data.response };
 					setMessages((prev) => [...prev, aiQuestion]);
@@ -334,8 +356,6 @@ export default function AppProvider({ children, sessionId }) {
 
 					// Don't increment questionsAsked here - it gets incremented in handleInterventionResponse
 					console.log("AI VC Question 1 generated:", data.response);
-				} else {
-					console.error("Failed to generate VC question:", data.error);
 				}
 			} catch (error) {
 				console.error("Failed to generate VC question:", error);
@@ -356,17 +376,11 @@ export default function AppProvider({ children, sessionId }) {
 					return;
 				}
 
-				const slideResponse = await postAssignmentSlides(
+				const slideData = await postAssignmentSlides(
 					selectedAssignment,
-					sessionId || "",
 					slideRange
 				);
 
-				if (!slideResponse.ok) {
-					throw new Error("Failed to fetch slide content");
-				}
-
-				const slideData = await slideResponse.json();
 				console.log("Extracted slide content:", slideData);
 
 				// Build enhanced context and send to AI
@@ -375,7 +389,7 @@ export default function AppProvider({ children, sessionId }) {
 				console.error("AI Intervention failed:", error);
 			}
 		},
-		[generateVCQuestion, selectedAssignment, sessionId]
+		[generateVCQuestion, selectedAssignment]
 	);
 
 	const handleSlideLockTriggered = useCallback(
@@ -466,7 +480,7 @@ export default function AppProvider({ children, sessionId }) {
 					pausedByAIRef.current = false;
 
 					awaitingAnswerRef.current = true;
-					answerStartRef.current = Date.now();
+					answerStartRef.current = recordingTime;
 					armVAD(); // ← re-arm VAD for this answer window
 				}
 			}
@@ -474,7 +488,7 @@ export default function AppProvider({ children, sessionId }) {
 
 		TTSService.addListener(onTTS);
 		return () => TTSService.removeListener(onTTS);
-	}, [pauseRecording, resumeRecording, armVAD]);
+	}, [pauseRecording, resumeRecording, armVAD, recordingTime]);
 
 	const value = useMemo(
 		() => ({
@@ -513,6 +527,8 @@ export default function AppProvider({ children, sessionId }) {
 			// timestamps
 			slideTimestamps,
 			setSlideTimestamps,
+			qaTimestamps,
+			setQaTimestamps,
 		}),
 		[
 			// chat
@@ -543,6 +559,7 @@ export default function AppProvider({ children, sessionId }) {
 
 			// timestamps
 			slideTimestamps,
+			qaTimestamps,
 		]
 	);
 
