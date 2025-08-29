@@ -53,7 +53,12 @@ def list_sessions():
         include={
             "student": True,
             "feedback": True,
-            "conversations": True,
+            "conversations": {
+                "orderBy": {"timestamp": "asc"},
+                "include": {
+                    "session": True  # Include session details in conversations
+                },
+            },
         }
     )
 
