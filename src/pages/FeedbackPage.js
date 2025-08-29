@@ -8,9 +8,6 @@ export default function FeedbackPage() {
 
 	const goBack = () => window.history.back();
 
-    // TODO: Once tested, wrap this function in development checks
-    // TODO: What does /feedback/test return?
-    // TODO: Should I just move this whole function into a service file?
 	const handleLoadTestFeedback = async () => {
 		try {
 			const data = await getTestFeedback();
@@ -29,21 +26,15 @@ export default function FeedbackPage() {
 		}
 	};
 
-    // TODO: This useEffect is messy. Clean up logic and error handling.
 	useEffect(() => {
 		const storedFeedback = localStorage.getItem("pitchFeedback");
-		if (storedFeedback) {
-			try {
-				const parsed = JSON.parse(storedFeedback);
-				if (parsed.slides) setFeedbackData(parsed);
-				else
-					setFeedbackData({
-						feedback_type: "legacy",
-						slides: [],
-						qa_feedback: null,
-						legacy_text: storedFeedback,
-					});
-			} catch {
+		try {
+			const parsed = JSON.parse(storedFeedback);
+			const structured = parsed?.structured || parsed; // tolerate both shapes
+
+			if (structured?.slides) {
+				setFeedbackData(structured);
+			} else {
 				setFeedbackData({
 					feedback_type: "legacy",
 					slides: [],
@@ -51,10 +42,16 @@ export default function FeedbackPage() {
 					legacy_text: storedFeedback,
 				});
 			}
-		} else {
-			setFeedbackData(null);
+		} catch (error) {
+			setFeedbackData({
+				feedback_type: "legacy",
+				slides: [],
+				qa_feedback: null,
+				legacy_text: storedFeedback,
+			});
+		} finally {
+			setLoading(false);
 		}
-		setLoading(false);
 	}, []);
 
 	if (loading) {

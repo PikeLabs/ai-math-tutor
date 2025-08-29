@@ -1,5 +1,6 @@
 import { ENDPOINTS } from "../constants";
 
+// TODO: Add helper class to remove all the duplicate code and improve error handling.
 // --- Auth ---
 export async function professorLogin(password) {
 	const r = await fetch(ENDPOINTS.professor.login, {
@@ -8,8 +9,21 @@ export async function professorLogin(password) {
 		credentials: "include",
 		body: JSON.stringify({ password }),
 	});
-	if (!r.ok) throw new Error(`login failed: ${r.status}`);
-	return r.json();
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Login Failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Login Failed: ${errMsg}`);
+	}
+
+	return data;
 }
 
 export async function professorLogout() {
@@ -17,17 +31,51 @@ export async function professorLogout() {
 		method: "POST",
 		credentials: "include",
 	});
-	if (!r.ok) throw new Error(`logout failed: ${r.status}`);
-	return r.json();
+
+	let data;
+
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Logout Failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Login Failed: ${errMsg}`);
+	}
+
+	return data;
 }
 
 export async function checkIsProfessor() {
 	const r = await fetch(ENDPOINTS.professor.me, {
 		method: "GET",
 		credentials: "include",
+		headers: { "Content-Type": "application/json" },
 	});
-	if (!r.ok) throw new Error(`checkIsProfessor failed: ${r.status}`);
-	return r.json();
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`CheckisProfessor failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg =
+			data?.error ||
+			r.statusText ||
+			"Login cookie not set (check CORS/cookie settings)";
+		throw new Error(`CheckisProfessor failed: ${errMsg}`);
+	}
+
+	return data;
 }
 
 // --- Sesssions ---
@@ -37,8 +85,22 @@ export async function createSession({ studentName, slideCount, pdfUrl }) {
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ studentName, slideCount, pdfUrl }),
 	});
-	if (!r.ok) throw new Error(`createSession failed: ${r.status}`);
-	return r.json();
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Create Session failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Create Session failed: ${errMsg}`);
+	}
+
+	return data;
 }
 
 export async function patchSession(
@@ -50,8 +112,22 @@ export async function patchSession(
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ slideCount, status, pdfUrl, completedAt }),
 	});
-	if (!r.ok) throw new Error(`patchSession failed: ${r.status}`);
-	return r.json();
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Patch Session: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Patch Session: ${errMsg}`);
+	}
+
+	return data;
 }
 
 export async function listProfessorSessions() {
@@ -62,8 +138,22 @@ export async function listProfessorSessions() {
 	});
 
 	if (r.status === 401) throw new Error("Unauthorized");
-	if (!r.ok) throw new Error(`listProfessorSessions failed: ${r.status}`);
-	return r.json();
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`List Professor Sessions Failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`List Professor Sessions Failed: ${errMsg}`);
+	}
+
+	return data;
 }
 
 export async function getProfessorSession(id) {
@@ -74,21 +164,52 @@ export async function getProfessorSession(id) {
 	});
 
 	if (r.status === 401) throw new Error("Unauthorized");
-	if (!r.ok) throw new Error(`getProfessorSession failed: ${r.status}`);
-	return r.json();
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Get Professor Session failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Get Professor Session failed: ${errMsg}`);
+	}
+
+	return data;
 }
 
 export async function markSessionReviewed(sessionId, reviewed = true) {
 	const r = await fetch(ENDPOINTS.professor.markReviewed(sessionId), {
 		method: "PUT",
 		headers: { "Content-Type": "application/json" },
+		credentials: "include",
 		body: JSON.stringify({ reviewed }),
 	});
-	if (!r.ok) throw new Error(`markSessionReviewed failed: ${r.status}`);
-	return r.json();
+
+	let data;
+
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Mark Session Reviewed failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Mark Session Reviewed failed: ${errMsg}`);
+	}
+
+	return data;
 }
 
 // --- Chat ---
+// TODO: Update to return json;
 export async function createChat({
 	sessionId,
 	messages,
@@ -96,7 +217,7 @@ export async function createChat({
 	slideNumber,
 }) {
 	const timestamp = new Date().toISOString();
-	const response = await fetch(ENDPOINTS.chat, {
+	const r = await fetch(ENDPOINTS.chat.json, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
@@ -108,21 +229,50 @@ export async function createChat({
 		}),
 	});
 
-	return response;
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Create Chat Failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Create Chat Failed: ${errMsg}`);
+	}
+
+	return data;
 }
 
-// TODO: After new endpoint is created, switch to using it
-export async function createFormChat(formData) {
+// TODO: Update to return json;
+export async function createChatWithAudio(formData) {
 	formData.append("timestamp", new Date().toISOString());
-	const response = await fetch(ENDPOINTS.chat, {
+	const r = await fetch(ENDPOINTS.chat.audio, {
 		method: "POST",
 		body: formData,
 	});
-	if (!response.ok) throw new Error(`createFormChat failed ${response.status}`);
-	return response;
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Create Chat with Audio Failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Create Chat with Audio Failed: ${errMsg}`);
+	}
+
+	return data;
 }
 
 // --- Conversations ---
+// TODO: Need to implement
 export async function logConversation({
 	sessionId,
 	role,
@@ -135,11 +285,26 @@ export async function logConversation({
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ role, content, slideNumber, timestamp }),
 	});
-	if (!r.ok) throw new Error(`logConversation failed ${r.status}`);
-	return r.json();
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Log Conversation failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Log Conversation failed: ${errMsg}`);
+	}
+
+	return data;
 }
 
 // --- Feedback ---
+// TODO: Update to return json;
 export async function saveFeedback({
 	sessionId,
 	overallFeedback = "",
@@ -160,20 +325,36 @@ export async function saveFeedback({
 			improvements,
 		}),
 	});
+
 	if (!r.ok) throw new Error(`saveFeedback failed ${r.status}`);
 	return r;
 }
 
-// src/services/api.js
+// TODO: Update to return json;
 export async function generateFeedbackMultipart(formData) {
 	const r = await fetch(ENDPOINTS.feedback.generate, {
 		method: "POST",
 		body: formData, // includes recording blob if present
 	});
-	if (!r.ok) throw new Error(`generateFeedback failed ${r.status}`);
-	return r;
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Failed to generate feedback (multipart): ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Failed to generate feedback (multipart): ${errMsg}`);
+	}
+
+	return data;
 }
 
+// TODO: Update to return json;
 // (optional JSON variant if you ever want to generate without audio)
 export async function generateFeedbackJSON(payload) {
 	const r = await fetch(ENDPOINTS.feedback.generate, {
@@ -181,32 +362,98 @@ export async function generateFeedbackJSON(payload) {
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(payload),
 	});
-	if (!r.ok) throw new Error(`generateFeedback (json) failed ${r.status}`);
-	return r;
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Failed to generate feedback (json): ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Failed to generate feedback (json): ${errMsg}`);
+	}
+
+	return data;
 }
 
 // Note: Development/testing only
 export async function getTestFeedback() {
 	const r = await fetch(ENDPOINTS.feedback.test);
-	if (!r.ok) throw new Error(`getTestFeedback failed ${r.status}`);
-	return r.json();
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Get Test Feedback failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Get Test Feedback failed: ${errMsg}`);
+	}
+
+	return data;
 }
 
 // --- PDF ---
-export const postPdfForSlides = async (formdata) =>
-	await fetch(ENDPOINTS.uploads.process, {
+export const postPdfForSlides = async (formdata) => {
+	const r = await fetch(ENDPOINTS.uploads.slides, {
 		method: "POST",
 		body: formdata,
 	});
 
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`postPdfForSlides failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`postPdfForSlides failed: ${errMsg}`);
+	}
+
+	return data;
+};
+
+// TODO: Pass in the currentPDFSession/currentPDFUploadId
+export const deleteSessionPdf = async (sessionId, previousUploadId) => {
+	const r = await fetch(ENDPOINTS.uploads.deleteSessionPdf(sessionId), {
+		method: "DELETE",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ previousUploadId }),
+	});
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Delete Session PDF failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Delete Session PDF failed: ${errMsg}`);
+	}
+
+	return data;
+};
+
 // --- Slides ---
-// TODO: Add sessionId here and to backend...
-export const postAssignmentSlides = async (
-	assignment,
-	sessionId,
-	{ start, end }
-) =>
-	await fetch(ENDPOINTS.assignments.slides(assignment), {
+// TODO: Update to return JSON.
+export const postAssignmentSlides = async (assignment, { start, end }) => {
+	const r = await fetch(ENDPOINTS.assignments.slides(assignment), {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
@@ -214,3 +461,42 @@ export const postAssignmentSlides = async (
 			end_slide: end,
 		}),
 	});
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Post Assignment Slides Failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Post Assignment Slides Failed: ${errMsg}`);
+	}
+
+	return data;
+};
+
+export async function getSessionFeedback(sessionId) {
+	const r = await fetch(`${ENDPOINTS.feedback.bySession}/${sessionId}`, {
+		method: "GET",
+	});
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Post Assignment Slides Failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Post Assignment Slides Failed: ${errMsg}`);
+	}
+
+	return data;
+}
