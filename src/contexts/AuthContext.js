@@ -22,7 +22,7 @@ export default function AuthProvider({ children }) {
 	useEffect(() => {
 		(async () => {
 			try {
-                const data = await checkIsProfessor()
+				const data = await checkIsProfessor();
 				setIsProfessor(!!data.isProfessor);
 			} catch (e) {
 				setIsProfessor(false);
@@ -33,31 +33,22 @@ export default function AuthProvider({ children }) {
 	}, []);
 
 	const login = async (password) => {
-		// const r = await fetch(API("/auth/professor"), {
-		// 	method: "POST",
-		// 	headers: { "Content-Type": "application/json" },
-		// 	credentials: "include", // IMPORTANT: set cookie
-		// 	body: JSON.stringify({ password }),
-		// });
-        try {
-            const data = await professorLogin(password);
-            console.log("Login data:", data);
-            // TODO: Add check here...
-            setIsProfessor(true);
-        } catch (error) {
-            setIsProfessor(false);
-            console.error("Login failed:", error);
-            throw error;
-        }
+		try {
+			const data = await professorLogin(password);
+
+			const { isProfessor } = await checkIsProfessor();
+			setIsProfessor(!!isProfessor);
+		} catch (error) {
+			setIsProfessor(false);
+			console.error("Login failed:", error);
+			throw error;
+		}
+
 		return true;
 	};
 
 	const logout = async () => {
-        await professorLogout();
-		// await fetch(API("/auth/logout"), {
-		// 	method: "POST",
-		// 	credentials: "include",
-		// });
+		await professorLogout();
 		setIsProfessor(false);
 	};
 
