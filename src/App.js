@@ -8,9 +8,8 @@ import Dashboard from "./components/professor/Dashboard";
 import FeedbackPage from "./pages/FeedbackPage";
 import LandingPage from "./components/LandingPage";
 import Login from "./components/professor/Login";
-import ProtectedRoute from "./components/ProtectedRoute";
+import ProfessorRoute from "./components/ProfessorRoute";
 import RequireSession from "./components/RequireSession";
-import Sessions from "./components/professor/Sessions";
 import StudentFlow from "./components/student/StudentFlow";
 import StudentNameInput from "./components/StudentNameInput";
 import { useSession } from "./contexts/SessionContext";
@@ -29,15 +28,10 @@ function AppRoutes() {
 					path="/professor"
 					element={<Login />}
 				/>
-				<Route element={<ProtectedRoute />}>
+				<Route element={<ProfessorRoute />}>
 					<Route
 						path="/professor/dashboard"
 						element={<Dashboard />}
-					/>
-					{/* TODO: Sessions should be SessionDetail and reflect the old Feedback Display */}
-					<Route
-						path="/professor/session/:id"
-						element={<Sessions />}
 					/>
 				</Route>
 

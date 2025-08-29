@@ -168,7 +168,7 @@ export default function Dashboard() {
 			/>
 
 			{/* Pagination */}
-			<div className="mt-3 flex items-center justify-between text-sm pagination">
+			<div className="mt-3 flex items-center justify-between text-sm pagination no-print">
 				<div>
 					Page {page} of {totalPages} • {sorted.length} total
 				</div>

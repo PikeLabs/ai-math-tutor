@@ -1,413 +1,302 @@
-import { useState } from "react";
-import SlideRow from "./SlideRow";
-import SlideModal from "./SlideModal";
+// src/components/professor/SessionTableRow.js
+import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import Chevron from "../ui/Chevron";
+import { getProfessorSession } from "../../services/api";
+import { IMAGE_BASE } from "../../constants"; // for audio base
 
-function SessionInformation({ slides, hasAudio, hasConversation, data }) {
-	const slidesAnalyzed = `📊 ${slides.length} slides analyzed •`;
-	const audioProcessed = hasAudio
-		? " 🎙️ Audio processed  •"
-		: " ⚠️ No audio  •";
-	const qaIncluded = hasConversation ? " 💬 Q&A included" : " No Q&A";
-	const qaSegmentCount = data?.metadata?.qa_segments_count || 0;
-	const audioSegments =
-		data?.metadata?.has_qa_audio ??
-		` • 🎧 ${qaSegmentCount} Q&A audio segment${qaSegmentCount > 1 ? "" : "s"}`;
+// TODO: This is another Feedback display component that we'll be getting rid of soon.
+const statusIconMap = {
+	met: "✓",
+	not_met: "✗",
+	not_applicable: "N/A",
+	unknown: "?",
+};
+const statusClassMap = {
+	met: "text-emerald-600",
+	not_met: "text-red-600",
+	not_applicable: "text-gray-500",
+	unknown: "text-gray-400",
+};
+
+function StatusItem({ feedbackItem, label }) {
+	const { status, comment } = feedbackItem || {};
+	const statusColorClass = statusClassMap[status || "unknown"];
+	const statusIcon = statusIconMap[status || "unknown"];
+	const feedbackComment = comment || "No feedback available";
 
 	return (
-		<>
-			<div
-				style={{
-					fontWeight: "bold",
-					color: "#1565c0",
-					marginBottom: "5px",
-				}}
-			>
-				Session Information
+		<div className="mb-1.5 p-2 border border-gray-200 rounded-md bg-white">
+			<strong className="text-slate-800">{label}: </strong>
+			<span className={`font-bold ${statusColorClass}`}>{statusIcon}</span>
+			<div className="text-sm leading-relaxed text-slate-600 mt-1">
+				{feedbackComment}
 			</div>
-			<div style={{ fontSize: "14px", color: "#1976d2" }}>
-				{slidesAnalyzed}
-				{audioProcessed}
-				{qaIncluded}
-				{audioSegments}
-			</div>
-		</>
+		</div>
 	);
 }
 
-/**
- * Props:
- * - data: either structured (with slides, metadata, qa_feedback) or legacy ({ feedback_type:'legacy', legacy_text })
- * - readOnly?: boolean  // hides back/test buttons if true
- * - onBack?: () => void
- * - onLoadTest?: () => void
- */
-export default function FeedbackDisplay({
-	data,
-	readOnly = false,
-	onBack,
-	onLoadTest,
-}) {
-	const [modalImage, setModalImage] = useState(null);
-	const [modalSlideNumber, setModalSlideNumber] = useState(null);
-	const [isModalOpen, setIsModalOpen] = useState(false);
+function CompactSlideRows({ slides }) {
+	const [audioErrors, setAudioErrors] = useState({});
 
-	const handleImageClick = (imageUrl, slideNumber) => {
-		setModalImage(imageUrl);
-		setModalSlideNumber(slideNumber);
-		setIsModalOpen(true);
-	};
+	const setErr = (n) =>
+		setAudioErrors((prev) => ({
+			...prev,
+			[n]: true,
+		}));
 
-	const handleCloseModal = () => {
-		setIsModalOpen(false);
-		setModalImage(null);
-		setModalSlideNumber(null);
-	};
-
-	const renderQAFeedback = (qaFeedback) => {
-		if (!qaFeedback) return null;
-
-		const getStatusIcon = (status) => {
-			switch (status) {
-				case "met":
-					return "✓";
-				case "not_met":
-					return "✗";
-				case "not_applicable":
-					return "N/A";
-				default:
-					return "?";
-			}
-		};
-		const getStatusColor = (status) => {
-			switch (status) {
-				case "met":
-					return "#27ae60";
-				case "not_met":
-					return "#e74c3c";
-				case "not_applicable":
-					return "#7f8c8d";
-				default:
-					return "#95a5a6";
-			}
-		};
-
+	if (!slides?.length) {
 		return (
-			<div
-				style={{
-					marginTop: "30px",
-					padding: "20px",
-					backgroundColor: "#f8f9fa",
-					borderRadius: "8px",
-					border: "1px solid #e9ecef",
-				}}
-			>
-				<h3
-					style={{
-						color: "#2c3e50",
-						borderBottom: "2px solid #3498db",
-						paddingBottom: "8px",
-						marginBottom: "15px",
-					}}
-				>
-					Q&A Session Feedback
-				</h3>
-
-				<div style={{ display: "flex", gap: "15px", flexWrap: "wrap" }}>
-					<div
-						style={{
-							flex: "1",
-							minWidth: "300px",
-							padding: "15px",
-							backgroundColor: "#fff",
-							borderRadius: "6px",
-							border: "1px solid #e0e0e0",
-						}}
-					>
-						<div
-							style={{
-								fontWeight: "bold",
-								marginBottom: "8px",
-								display: "flex",
-								alignItems: "center",
-							}}
-						>
-							<span style={{ color: "#2c3e50", marginRight: "10px" }}>
-								Impromptu Response:
-							</span>
-							<span
-								style={{
-									color: getStatusColor(qaFeedback.impromptu_response.status),
-									fontSize: "18px",
-									fontWeight: "bold",
-								}}
-							>
-								{getStatusIcon(qaFeedback.impromptu_response.status)}
-							</span>
-						</div>
-						<div style={{ color: "#555", lineHeight: "1.4", fontSize: "14px" }}>
-							{qaFeedback.impromptu_response.comment}
-						</div>
-					</div>
-
-					<div
-						style={{
-							flex: "1",
-							minWidth: "300px",
-							padding: "15px",
-							backgroundColor: "#fff",
-							borderRadius: "6px",
-							border: "1px solid #e0e0e0",
-						}}
-					>
-						<div
-							style={{
-								fontWeight: "bold",
-								marginBottom: "8px",
-								display: "flex",
-								alignItems: "center",
-							}}
-						>
-							<span style={{ color: "#2c3e50", marginRight: "10px" }}>
-								Composure:
-							</span>
-							<span
-								style={{
-									color: getStatusColor(qaFeedback.composure.status),
-									fontSize: "18px",
-									fontWeight: "bold",
-								}}
-							>
-								{getStatusIcon(qaFeedback.composure.status)}
-							</span>
-						</div>
-						<div style={{ color: "#555", lineHeight: "1.4", fontSize: "14px" }}>
-							{qaFeedback.composure.comment}
-						</div>
-					</div>
-				</div>
-			</div>
-		);
-	};
-
-	const renderLegacyFeedback = (legacyText) => (
-		<div
-			style={{
-				backgroundColor: "#f8f9fa",
-				padding: "30px",
-				borderRadius: "8px",
-				border: "1px solid #e9ecef",
-				fontSize: "16px",
-				color: "#333",
-				whiteSpace: "pre-line",
-			}}
-		>
-			{legacyText}
-		</div>
-	);
-
-	// Top controls (hide in readOnly)
-	const Controls = () => (
-		<div style={{ marginBottom: "20px" }}>
-			{!readOnly && (
-				<>
-					<button
-						onClick={onBack}
-						style={{
-							padding: "10px 20px",
-							backgroundColor: "#007bff",
-							color: "white",
-							border: "none",
-							borderRadius: "5px",
-							cursor: "pointer",
-							fontSize: "14px",
-							marginRight: "10px",
-						}}
-					>
-						← Back to Chat
-					</button>
-					<button
-						onClick={onLoadTest}
-						style={{
-							padding: "10px 20px",
-							backgroundColor: "#28a745",
-							color: "white",
-							border: "none",
-							borderRadius: "5px",
-							cursor: "pointer",
-							fontSize: "14px",
-						}}
-					>
-						Load Test Feedback
-					</button>
-				</>
-			)}
-		</div>
-	);
-
-	if (!data) {
-		return (
-			<div
-				style={{
-					backgroundColor: "#fff",
-					padding: 40,
-					borderRadius: 8,
-					border: "1px solid #e9ecef",
-					textAlign: "center",
-					color: "#666",
-				}}
-			>
-				No feedback available.
+			<div className="text-sm text-gray-500 p-4">
+				No slide feedback available.
 			</div>
 		);
 	}
 
-	const isLegacy = data.feedback_type === "legacy";
-	const slides = data.slides || [];
-	const hasAudio = !!data?.metadata?.has_audio;
-	const hasConversation = !!data?.metadata?.has_conversation;
+	return (
+		<div className="bg-white rounded border border-gray-200 overflow-hidden">
+			<table className="w-full border-collapse">
+				<thead>
+					<tr className="bg-gray-50 border-b border-gray-200">
+						<th className="px-4 py-3 text-center font-semibold text-slate-600 w-[220px]">
+							Slide
+						</th>
+						<th className="px-4 py-3 text-center font-semibold text-slate-600">
+							Learning Objectives Feedback
+						</th>
+						<th className="px-4 py-3 text-center font-semibold text-slate-600 w-[220px]">
+							Audio
+						</th>
+					</tr>
+				</thead>
+				<tbody>
+					{slides.map((s) => {
+						const { feedback } = s;
+						const audioSrc = s?.audio_url
+							? `${IMAGE_BASE}${s.audio_url}`
+							: null;
+						const n = s.slide_number;
+
+						return (
+							<tr
+								key={n}
+								className="border-b border-gray-200"
+							>
+								{/* Left column (no image) */}
+								<td className="p-4 align-top text-center">
+									<div className="mb-1 font-medium text-gray-700">
+										Slide {n}
+									</div>
+									<div className="text-[11px] text-gray-500">
+										(image hidden in table view)
+									</div>
+								</td>
+
+								{/* Middle: Learning Objectives (same look as SlideRow) */}
+								<td className="p-4 align-top bg-slate-50">
+									<div className="mb-2 font-bold text-slate-800">
+										Learning Objectives
+									</div>
+									<StatusItem
+										feedbackItem={feedback?.content_structuring}
+										label="Content structuring"
+									/>
+									<StatusItem
+										feedbackItem={feedback?.delivery}
+										label="Delivery"
+									/>
+									<StatusItem
+										feedbackItem={feedback?.impromptu_response}
+										label="Impromptu response"
+									/>
+									<StatusItem
+										feedbackItem={feedback?.composure}
+										label="Composure"
+									/>
+								</td>
+
+								{/* Right: Audio (same styling as SlideRow) */}
+								<td className="p-4 align-top text-center">
+									<div className="mb-2 font-bold text-slate-800">
+										Audio Segment
+									</div>
+									{audioSrc && !audioErrors[n] ? (
+										<>
+											<audio
+												controls
+												className="w-full max-w-[180px] mx-auto"
+												onError={() => setErr(n)}
+											>
+												<source
+													src={audioSrc}
+													type="audio/wav"
+												/>
+												Your browser does not support the audio element.
+											</audio>
+											<div className="mt-1 text-[11px] text-gray-600">
+												Audio for this slide
+											</div>
+										</>
+									) : (
+										<div className="w-[180px] h-10 mx-auto border border-dashed border-gray-300 rounded flex items-center justify-center text-gray-600 text-xs">
+											{audioErrors[n]
+												? "Audio not available"
+												: "No audio segment"}
+										</div>
+									)}
+								</td>
+							</tr>
+						);
+					})}
+				</tbody>
+			</table>
+		</div>
+	);
+}
+
+function Row({ r }) {
+	const [open, setOpen] = useState(false);
+	const [loading, setLoading] = useState(false);
+	const [err, setErr] = useState("");
+	const [slides, setSlides] = useState([]);
+
+	const studentName = r.student?.name || "—";
+	const created = r.createdAt ? new Date(r.createdAt).toLocaleString() : "—";
+	const completed = r.completedAt
+		? new Date(r.completedAt).toLocaleString()
+		: "—";
+
+	// Score: leave blank unless backend provides something (presentationScore, etc.)
+	const score = r?.feedback?.presentationScore ?? "—";
+
+	useEffect(() => {
+		if (!open) return;
+		let alive = true;
+		(async () => {
+			setLoading(true);
+			setErr("");
+			try {
+				const data = await getProfessorSession(r.id);
+				// Expect data.feedback.structured (as in your generate-feedback response)
+				const structured = data?.feedback?.structured;
+				const slideArr = structured?.slides || [];
+				if (alive) setSlides(slideArr);
+			} catch (e) {
+				if (alive) setErr(e?.message || "Failed to load session feedback");
+			} finally {
+				if (alive) setLoading(false);
+			}
+		})();
+		return () => {
+			alive = false;
+		};
+	}, [open, r.id]);
 
 	return (
-		<div
-			style={{
-				padding: "20px",
-				fontFamily: "Arial, sans-serif",
-				backgroundColor: "#f5f5f5",
-			}}
-		>
-			<Controls />
-
-			<h1 style={{ color: "#333", marginBottom: "30px", textAlign: "center" }}>
-				Pitch Feedback Report
-			</h1>
-
-			{isLegacy ? (
-				renderLegacyFeedback(data.legacy_text)
-			) : (
-				<div>
-					{/* Metadata */}
-					<div
-						style={{
-							backgroundColor: "#e3f2fd",
-							padding: "15px",
-							borderRadius: "6px",
-							marginBottom: "20px",
-							border: "1px solid #90caf9",
-						}}
+		<>
+			{/* Collapsed summary row */}
+			<tr className="border-b">
+				<td className="py-2 pl-2">
+					<button
+						type="button"
+						onClick={() => setOpen((v) => !v)}
+						className="inline-flex items-center gap-2"
+						aria-expanded={open}
+						aria-label={open ? "Collapse feedback" : "Expand feedback"}
 					>
-						<SessionInformation
-							slides={slides}
-							hasAudio={hasAudio}
-							hasConversation={hasConversation}
-							data={data}
+						<Chevron open={open} />
+						<span className="underline decoration-dotted">Details</span>
+					</button>
+				</td>
+				<td className="py-2">{studentName}</td>
+				<td className="font-mono">
+					<Link
+						to={`/professor/session/${r.id}`}
+						className="text-blue-600 underline"
+					>
+						{r.id.slice(0, 8)}…
+					</Link>
+				</td>
+				<td>{created}</td>
+				<td>{completed}</td>
+				<td>
+					{/* color chip by score (placeholder; adjust when you have a real numeric) */}
+					<span className="inline-flex items-center gap-1">
+						<span
+							className={`inline-block w-2 h-2 rounded-full ${
+								score === "—"
+									? "bg-gray-300"
+									: score >= 80
+									? "bg-emerald-500"
+									: score >= 50
+									? "bg-amber-500"
+									: "bg-red-500"
+							}`}
 						/>
-					</div>
+						{score}
+					</span>
+				</td>
+			</tr>
 
-					{/* Slides Table */}
-					{slides.length > 0 ? (
-						<div
-							style={{
-								backgroundColor: "#fff",
-								borderRadius: "8px",
-								border: "1px solid #e9ecef",
-								overflow: "hidden",
-							}}
-						>
-							<table style={{ width: "100%", borderCollapse: "collapse" }}>
-								<thead>
-									<tr
-										style={{
-											backgroundColor: "#f8f9fa",
-											borderBottom: "2px solid #dee2e6",
-										}}
-									>
-										<th
-											style={{
-												padding: 15,
-												textAlign: "center",
-												fontWeight: "bold",
-												color: "#495057",
-												width: 200,
-											}}
-										>
-											Slide
-										</th>
-										<th
-											style={{
-												padding: 15,
-												textAlign: "center",
-												fontWeight: "bold",
-												color: "#495057",
-											}}
-										>
-											Learning Objectives Feedback
-										</th>
-										<th
-											style={{
-												padding: 15,
-												textAlign: "center",
-												fontWeight: "bold",
-												color: "#495057",
-												width: 200,
-											}}
-										>
-											Audio
-										</th>
-									</tr>
-								</thead>
-								<tbody>
-									{slides.map((slideData) => (
-										<SlideRow
-											key={slideData.slide_number}
-											slideData={slideData}
-											onImageClick={handleImageClick}
-										/>
-									))}
-								</tbody>
-							</table>
-						</div>
-					) : (
-						<div
-							style={{
-								backgroundColor: "#fff",
-								padding: 40,
-								borderRadius: 8,
-								border: "1px solid #e9ecef",
-								textAlign: "center",
-								color: "#666",
-							}}
-						>
-							No slide feedback available.
-						</div>
-					)}
-
-					{/* Q&A Feedback */}
-					{renderQAFeedback(data.qa_feedback)}
-				</div>
+			{/* Expanded panel: compact per-slide rows (no images) */}
+			{open && (
+				<tr className="border-b bg-white">
+					<td
+						colSpan={7}
+						className="p-4"
+					>
+						{loading ? (
+							<div className="text-sm text-gray-500">Loading feedback…</div>
+						) : err ? (
+							<div className="text-sm text-red-600">Error: {err}</div>
+						) : slides.length ? (
+							<CompactSlideRows slides={slides} />
+						) : (
+							<div className="text-sm text-gray-500">
+								No feedback saved for this session.
+							</div>
+						)}
+					</td>
+				</tr>
 			)}
+		</>
+	);
+}
 
-			<div
-				style={{
-					marginTop: "30px",
-					fontSize: "14px",
-					color: "#666",
-					textAlign: "center",
-					padding: "20px",
-					backgroundColor: "#fff",
-					borderRadius: "6px",
-					border: "1px solid #e9ecef",
-				}}
-			>
-				This feedback was generated based on your pitch presentation and Q&A
-				conversation.
-			</div>
+export default function SessionTableRow({ rows = [], busy = false }) {
+	if (busy && (!rows || rows.length === 0)) {
+		return (
+			<tr>
+				<td
+					colSpan="7"
+					className="text-center py-4 text-gray-500"
+				>
+					Loading…
+				</td>
+			</tr>
+		);
+	}
+	if (!rows || rows.length === 0) {
+		return (
+			<tr>
+				<td
+					colSpan="7"
+					className="text-center py-4 text-gray-500"
+				>
+					No sessions found.
+				</td>
+			</tr>
+		);
+	}
 
-			{/* Modal for full-size slide viewing */}
-			<SlideModal
-				imageUrl={modalImage}
-				slideNumber={modalSlideNumber}
-				isOpen={isModalOpen}
-				onClose={handleCloseModal}
-			/>
-		</div>
+	return (
+		<>
+			{rows.map((r) => (
+				<Row
+					key={r.id}
+					r={r}
+				/>
+			))}
+		</>
 	);
 }

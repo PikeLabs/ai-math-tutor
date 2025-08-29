@@ -2,6 +2,9 @@ import { useState } from "react";
 import SlideImage from "./SlideImage";
 import { IMAGE_BASE } from "../../constants";
 
+
+// TODO: I am currently downsizing all the Feedback displays into 2-3 components.
+// Currently, there are so many, it's hard to manage.
 const statusIconMap = {
 	met: "✓",
 	not_met: "✗",
@@ -34,7 +37,6 @@ function StatusItem({ feedbackItem, label }) {
 }
 
 function SlideRow({ slideData, onImageClick }) {
-	console.log("Image BASE:", IMAGE_BASE);
 	const [audioError, setAudioError] = useState(false);
 	const [imageError, setImageError] = useState(false);
 
@@ -55,31 +57,27 @@ function SlideRow({ slideData, onImageClick }) {
 	const thumbSrc = `${IMAGE_BASE}${slideData.image_url}`;
 	const fullSrc = `${IMAGE_BASE}${slideData.image_url_full}`;
 	const audioSrc = slideData?.audio_url
-		? `{IMAGE_BASE}${slideData.audio_url}`
+		? `${IMAGE_BASE}${slideData.audio_url}`
 		: null;
 
 	const { feedback } = slideData;
-	const onMouseOver = (e) => (e.target.style.borderColor = "#3498db");
-	const onMouseOut = (e) => (e.target.style.borderColor = "#ddd");
 
 	return (
-		<tr style={{ borderBottom: "1px solid #e0e0e0" }}>
+		<tr className="border-b border-gray-200">
 			{/* Slide cell (thumbnail) */}
 			<td className="p-4 align-top w-[200px] text-center">
 				<div className="mb-2 font-medium text-gray-700">
 					Slide {slideData.slide_number}
 				</div>
 
-				<div className="w-[180px] h-[120px] mx-auto flex items-center justify-center">
+				<div className="w-[180px] h-[120px] mx-auto flex items-center justify-center group">
 					{!imageError ? (
 						<SlideImage
 							src={thumbSrc}
 							alt={`Slide ${slideData.slide_number}`}
-							className="h-full object-contain border-2 border-gray-300 rounded cursor-pointer transition-colors duration-200 hover:border-gray-500"
+							className="h-full object-contain border-2 border-gray-300 rounded cursor-pointer transition-colors duration-200 group-hover:border-gray-500"
 							onClick={handleImageClick}
 							onError={handleImageError}
-							onMouseOver={onMouseOver}
-							onMouseOut={onMouseOut}
 						/>
 					) : (
 						<div className="w-full h-full border-2 border-dashed border-gray-300 rounded flex items-center justify-center text-gray-600 text-xs">
@@ -94,18 +92,8 @@ function SlideRow({ slideData, onImageClick }) {
 			</td>
 
 			{/* Column 2: Feedback */}
-			<td
-				style={{
-					padding: "15px",
-					verticalAlign: "top",
-					backgroundColor: "#f8f9fa",
-				}}
-			>
-				<div
-					style={{ marginBottom: "10px", fontWeight: "bold", color: "#2c3e50" }}
-				>
-					Learning Objectives
-				</div>
+			<td className="p-4 align-top bg-gray-50">
+				<div className="mb-2 font-bold text-slate-800">Learning Objectives</div>
 				<>
 					<StatusItem
 						feedbackItem={feedback.content_structuring}
@@ -127,54 +115,29 @@ function SlideRow({ slideData, onImageClick }) {
 			</td>
 
 			{/* Column 3: Audio Player */}
-			<td
-				style={{
-					padding: "15px",
-					verticalAlign: "top",
-					width: "200px",
-					textAlign: "center",
-				}}
-			>
-				<div
-					style={{ marginBottom: "10px", fontWeight: "bold", color: "#2c3e50" }}
-				>
-					Audio Segment
-				</div>
+			<td className="p-4 align-top w-[200px] text-center">
+				<div className="mb-2 font-bold text-slate-800">Audio Segment</div>
 				{slideData.audio_url && !audioError ? (
 					<div>
 						<audio
 							controls
-							style={{
-								width: "100%",
-								maxWidth: "180px",
-							}}
+							className="w-full max-w-[180px]"
 							onError={handleAudioError}
 						>
-							<source
-								src={`http://localhost:5001${slideData.audio_url}`}
-								type="audio/wav"
-							/>
+							{audioSrc && (
+								<source
+									src={audioSrc}
+									type="audio/wav"
+								/>
+							)}
 							Your browser does not support the audio element.
 						</audio>
-						<div style={{ marginTop: "5px", fontSize: "11px", color: "#666" }}>
+						<div className="mt-1 text-[11px] text-gray-600">
 							Audio for this slide
 						</div>
 					</div>
 				) : (
-					<div
-						style={{
-							width: "180px",
-							height: "40px",
-							border: "1px dashed #ccc",
-							borderRadius: "4px",
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "center",
-							color: "#666",
-							fontSize: "12px",
-							margin: "0 auto",
-						}}
-					>
+					<div className="w-[180px] h-10 border border-dashed border-gray-300 rounded flex items-center justify-center text-gray-600 text-xs mx-auto">
 						{audioError ? "Audio not available" : "No audio segment"}
 					</div>
 				)}

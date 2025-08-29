@@ -3,7 +3,7 @@ import { getProfessorSession, markSessionReviewed } from "../../services/api";
 import FeedbackDisplay from "../feedback/FeedbackDisplay";
 import { convertDbFeedbackToDisplay, exportToPdf } from "../../utils";
 
-
+// TODO: Another one to get rid of soon.
 /**
  * Props:
  * - sessionId: string
@@ -84,74 +84,77 @@ export default function FeedbackRow({
 		}
 	}
 
+	// return (
+	// 	<tr
+	// 		ref={panelRef}
+	// 		className={`overflow-hidden transition-[max-height] duration-300 ${
+	// 			animReady ? "max-h-[2000px]" : "max-h-0"
+	// 		}`}
+	// 	>
+	// 		<td className="p-4 bg-gray-50 border-t">
+	// 			{/* Meta */}
+	// 			<td className="flex flex-wrap items-center gap-4 text-xs text-gray-600 mb-3">
+	// 				<div>
+	// 					<span className="font-medium">Created:</span> {meta.created}
+	// 				</div>
+	// 				<div>
+	// 					<span className="font-medium">Completed:</span> {meta.completed}
+	// 				</div>
+	// 				<div>
+	// 					<span className="font-medium">Slides:</span> {meta.slides}
+	// 				</div>
+	// 				<div>
+	// 					<span className="font-medium">Audio:</span> {meta.audio}
+	// 				</div>
+	// 				{feedback?.viewedByProfessor && (
+	// 					<div className="text-green-700">Reviewed ✓</div>
+	// 				)}
+	// 			</td>
 
+	// 			{/* Actions */}
+	// 			<td className="flex gap-2 mb-3 no-print no-export">
+	// 				<button
+	// 					onClick={handlePrint}
+	// 					className="px-3 py-1 text-sm border rounded"
+	// 				>
+	// 					Print
+	// 				</button>
+	// 				<button
+	// 					onClick={handleExportPdf}
+	// 					className="px-3 py-1 text-sm border rounded"
+	// 				>
+	// 					Export PDF
+	// 				</button>
+	// 				{!feedback?.viewedByProfessor && (
+	// 					<button
+	// 						onClick={onMarkReviewed}
+	// 						className="px-3 py-1 text-sm rounded bg-blue-600 text-white"
+	// 					>
+	// 						Mark as Reviewed
+	// 					</button>
+	// 				)}
+	// 			</td>
+
+	// 			{/* Content */}
+	// 			{loading ? (
+	// 				<div className="text-sm text-gray-500">Loading feedback…</div>
+	// 			) : err ? (
+	// 				<div className="text-sm text-red-600">Error: {err}</div>
+	// 			) : (
+	// 				<div className="text-sm text-gray-500">
+	// 					No feedback saved for this session.
+	// 				</div>
+	// 			)}
+	// 		</td>
+	// 	</tr>
+	// );
+
+	const animationClass = animReady ? "max-h-[2000px]" : "max-h-0";
+	const tableRowClasses = `w-full border-b border-gray-200 overflow-hidden transition-[max-height] duration-300 ${animationClass}`;
 	return (
-		<div
+		<tr
+			className={tableRowClasses}
 			ref={panelRef}
-			className={`overflow-hidden transition-[max-height] duration-300 ${
-				animReady ? "max-h-[2000px]" : "max-h-0"
-			}`}
-		>
-			<div className="p-4 bg-gray-50 border-t">
-				{/* Meta */}
-				<div className="flex flex-wrap items-center gap-4 text-xs text-gray-600 mb-3">
-					<div>
-						<span className="font-medium">Created:</span> {meta.created}
-					</div>
-					<div>
-						<span className="font-medium">Completed:</span> {meta.completed}
-					</div>
-					<div>
-						<span className="font-medium">Slides:</span> {meta.slides}
-					</div>
-					<div>
-						<span className="font-medium">Audio:</span> {meta.audio}
-					</div>
-					{feedback?.viewedByProfessor && (
-						<div className="text-green-700">Reviewed ✓</div>
-					)}
-				</div>
-
-				{/* Actions */}
-				<div className="flex gap-2 mb-3 no-print no-export">
-					<button
-						onClick={handlePrint}
-						className="px-3 py-1 text-sm border rounded"
-					>
-						Print
-					</button>
-					<button
-						onClick={handleExportPdf}
-						className="px-3 py-1 text-sm border rounded"
-					>
-						Export PDF
-					</button>
-					{!feedback?.viewedByProfessor && (
-						<button
-							onClick={onMarkReviewed}
-							className="px-3 py-1 text-sm rounded bg-blue-600 text-white"
-						>
-							Mark as Reviewed
-						</button>
-					)}
-				</div>
-
-				{/* Content */}
-				{loading ? (
-					<div className="text-sm text-gray-500">Loading feedback…</div>
-				) : err ? (
-					<div className="text-sm text-red-600">Error: {err}</div>
-				) : feedback ? (
-					<FeedbackDisplay
-						data={convertDbFeedbackToDisplay(feedback)}
-						readOnly
-					/>
-				) : (
-					<div className="text-sm text-gray-500">
-						No feedback saved for this session.
-					</div>
-				)}
-			</div>
-		</div>
+		></tr>
 	);
 }

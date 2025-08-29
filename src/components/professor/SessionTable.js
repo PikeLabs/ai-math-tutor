@@ -1,4 +1,4 @@
-import SessionTableRow from "./SessionTableRow";
+import SessionFeedbackRow from "./SessionFeedbackRow";
 import TableSortHeader from "../ui/TableSortHeader";
 
 export default function SessionTable({
@@ -9,16 +9,17 @@ export default function SessionTable({
 	onSortChange,
 }) {
 	return (
-		<table className="w-full text-sm border rounded overflow-hidden">
-			<thead className="bg-gray-50">
+		<table className="w-full rounded overflow-hidden bg-white border border-gray-200">
+			<thead className="border-b border-gray-400 bg-gray-100">
 				<tr className="text-left border-b">
-					<th className="pl-2 w-28">Expand</th>
+					<th className="px-4 py-3 font-semibold">Expand</th>
 					<TableSortHeader
 						field="student"
 						label="Student"
 						sortField={sortField}
 						sortDir={sortDir}
 						onSortChange={onSortChange}
+						className="px-4 py-3 font-semibold"
 					/>
 					<th>Session ID</th>
 					<TableSortHeader
@@ -27,6 +28,7 @@ export default function SessionTable({
 						sortField={sortField}
 						sortDir={sortDir}
 						onSortChange={onSortChange}
+						className="px-4 py-3 font-semibold"
 					/>
 					<TableSortHeader
 						field="completedAt"
@@ -34,13 +36,13 @@ export default function SessionTable({
 						sortField={sortField}
 						sortDir={sortDir}
 						onSortChange={onSortChange}
+						className="px-4 py-3 font-semibold"
 					/>
-					<th>Score</th>
-					{/* TODO: Add overall Score Card Column */}
+					<th className="px-4 py-3 font-semibold">Score</th>
 				</tr>
 			</thead>
 			<tbody>
-				<SessionTableRow
+				<SessionFeedbackRow
 					rows={rows}
 					busy={busy}
 				/>

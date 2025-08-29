@@ -1,15 +1,12 @@
-import React, { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ENDPOINTS } from "../../constants";
 
-import {
-	getProfessorSession,
-	markSessionReviewed,
-	saveFeedback,
-} from "../../services/api";
+import { getProfessorSession } from "../../services/api";
 
+// TODO: We'll be removing this component, this was the details page.
 // TODO: Update css to make it match the rest of the app
-
+// TODO: What is this component?
 function Pill({ children, tone = "neutral" }) {
 	const tones = {
 		neutral: "bg-gray-100 text-gray-700",
@@ -26,8 +23,7 @@ function Pill({ children, tone = "neutral" }) {
 }
 
 
-// TODO: Renamed to SessionDetails
-export default function Sessions() {
+export default function SessionFeedbackDetails() {
 	const { id } = useParams();
 	const [data, setData] = useState(null);
 	const [busy, setBusy] = useState(false);
