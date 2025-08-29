@@ -39,7 +39,7 @@ function IncomingChatMessages({ messages, isLoading }) {
 }
 
 // TODO: Better name for this component
-function OnGoingQuestionsDisplay({
+function VcDisplay({
 	isSpeaking,
 	interventionState,
 	questionsAsked,
@@ -67,49 +67,61 @@ function OnGoingQuestionsDisplay({
 }
 
 // TODO: Better name for this component
-function QuestionsCompleted({
+function GeneratedFeedback({
 	interventionState,
 	feedbackGenerated,
 	isLoading,
-	generateFeedback,
+	genError,
 }) {
 	if (interventionState !== "complete") return null;
+	let status = null;
 
-	// TODO: The generate feedback button is going to be removed...
-	const genFeedbackButtonText = isLoading
-		? "Generating..."
-		: "Generate Feedback";
-	const genFeedbackButton = (
-		<button
-			onClick={generateFeedback}
-			disabled={isLoading}
-			className="generate-feedback-btn"
-			style={{
-				marginLeft: "10px",
-				padding: "5px 10px",
-				fontSize: "12px",
-			}}
-		>
-			{genFeedbackButtonText}
-		</button>
-	);
-
-	// TODO: Is this suppose to link to /feedback?
-	const feedbackNotice = (
-		<span className="ml-2.5 text-sm text-green-600 font-medium">
-			Feedback ready at /feedback
-		</span>
-	);
-
-	const feedback = feedbackGenerated ? feedbackNotice : genFeedbackButton;
+	if (isLoading && !feedbackGenerated) {
+		return (
+			<div className="intervention-status complete complete flex items-center justify-center">
+				<span className="ml-2.5 text-md text-gray-500 font-medium">
+					Generating feedback...
+				</span>
+			</div>
+		);
+	} else if (genError) {
+		return (
+			<div className="intervention-status complete complete flex items-center justify-center">
+				<span className="intervention-indicator mr-2">❌</span>
+				<span className="ml-2.5 text-md text-red-600 font-medium">
+					Failed to generate feedback...
+				</span>
+			</div>
+		);
+	} else if (feedbackGenerated) {
+		return (
+			<div className="intervention-status complete complete flex items-center justify-center">
+				<span className="intervention-indicator mr-2">✅</span>
+				<span className="ml-2.5 text-lg text-green-600 font-medium">
+					<a
+						href="/feedback"
+						className="text-green-700 underline hover:no-underline"
+					>
+						View your feedback
+					</a>
+				</span>
+			</div>
+		);
+	} else {
+		// Edge: complete but not started yet (very brief window)
+		status = (
+			<span className="ml-2.5 text-md text-blue-600 font-medium">
+				Preparing to generate feedback…
+			</span>
+		);
+	}
 
 	return (
 		<div className="intervention-status complete">
-			<span className="intervention-indicator">✅</span>
 			<span className="intervention-text">
-				Questions Complete - Continue Presentation
+				Questions Complete — Continue Presentation
 			</span>
-			{feedback}
+			{status}
 		</div>
 	);
 }
@@ -120,6 +132,7 @@ export default function ChatApp() {
 		getLatestRecording,
 		interventionState,
 		messages,
+		qaTimestamps,
 		questionsAsked,
 		selectedAssignment,
 		slideTimestamps,
@@ -130,8 +143,9 @@ export default function ChatApp() {
 		isLoading: false,
 		isSpeaking: false,
 	});
-
 	const [feedbackGenerated, setFeedbackGenerated] = useState(false);
+	const [genError, setGenError] = useState(null);
+	const [hasTriggeredFeedback, setHasTriggeredFeedback] = useState(false);
 
 	// Keep ChatApp in sync with the TTS engine.
 	// Subscribes to TTSService and updates avatarState whenever the VC starts/stops speaking or is loading audio.
@@ -141,23 +155,33 @@ export default function ChatApp() {
 		return () => TTSService.removeListener(handleTTSStateChange);
 	}, []);
 
+	useEffect(() => {
+		if (interventionState === "complete" && !hasTriggeredFeedback) {
+			setHasTriggeredFeedback(true);
+			generateFeedback();
+		}
+	}, [interventionState]); // eslint-disable-line react-hooks/exhaustive-deps
+
 	const stopCurrentAudio = () => {
 		TTSService.stop();
 	};
 
 	const generateFeedback = async () => {
 		setIsLoading(true);
+		setGenError(null);
 
 		try {
 			// ensure we have the latest audio by stopping now
 			const recordingBlob = await getLatestRecording();
 
-			if (!recordingBlob) {
-				alert("No recording available. Please record before finishing.");
-				return;
+			if (
+				!recordingBlob ||
+				(recordingBlob.size !== undefined && recordingBlob.size === 0)
+			) {
+				throw new Error("No presentation audio was recorded.");
 			}
 
-			const pdfSessionId = localStorage.getItem("currentPDFSession");
+			const pdfUploadId = localStorage.getItem("currentPDFUploadId");
 			const pdfSlideCount = localStorage.getItem("currentPDFSlideCount");
 
 			// Send with recording as multipart form data
@@ -166,25 +190,27 @@ export default function ChatApp() {
 			formData.append("selectedAssignment", selectedAssignment || "");
 			formData.append("recording", recordingBlob, "presentation.wav");
 			formData.append("slideTimestamps", JSON.stringify(slideTimestamps));
-			formData.append("pdfSessionId", pdfSessionId || "");
+			formData.append("qaTimestamps", JSON.stringify(qaTimestamps));
+			formData.append("pdfUploadId", pdfUploadId || "");
 			formData.append("pdfSlideCount", pdfSlideCount || "");
 			formData.append("sessionId", sessionId);
 
-			const response = await generateFeedbackMultipart(formData);
-			const data = await response.json();
+			const data = await generateFeedbackMultipart(formData);
+			console.log("Feedback generation response:", data);
+			const payloadToStore = data?.structured || data;
 
-			if (data.session_id || data.slides || data.feedback) {
-				// New structured format or legacy format
-				const feedbackToStore = data.feedback || JSON.stringify(data);
-				localStorage.setItem("pitchFeedback", feedbackToStore);
+			if (
+				payloadToStore?.session_id ||
+				payloadToStore?.slides ||
+				payloadToStore?.feedback ||
+				payloadToStore?.qa_feedback
+			) {
+				localStorage.setItem("pitchFeedback", JSON.stringify(payloadToStore));
 				setFeedbackGenerated(true);
-				alert("Feedback generated! Navigate to /feedback to view it.");
-			} else {
-				alert("Error: No feedback received from server");
 			}
 		} catch (err) {
-			alert(`Error generating feedback: ${err.message}`);
 			console.error("Feedback generation failed:", err);
+			setGenError("Feedback generation failed", err);
 		} finally {
 			setIsLoading(false);
 		}
@@ -201,18 +227,18 @@ export default function ChatApp() {
 				<div className="chat-header">
 					<h1>VC Mentor</h1>
 
-					<OnGoingQuestionsDisplay
+					<VcDisplay
 						isSpeaking={avatarState.isSpeaking}
 						interventionState={interventionState}
 						questionsAsked={questionsAsked}
 						stopCurrentAudio={stopCurrentAudio}
 					/>
 
-					<QuestionsCompleted
+					<GeneratedFeedback
 						interventionState={interventionState}
 						feedbackGenerated={feedbackGenerated}
 						isLoading={isLoading}
-						generateFeedback={generateFeedback}
+						genError={genError}
 					/>
 				</div>
 
