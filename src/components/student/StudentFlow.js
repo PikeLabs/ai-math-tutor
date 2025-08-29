@@ -1,5 +1,5 @@
 import InstructionsModal from "../modal/InstructionsModal";
-import PDFViewer from "../../PDFViewer";
+import PDFViewer from "../PDFViewer";
 import ChatApp from "../ChatApp";
 import { useSession } from "../../contexts/SessionContext";
 

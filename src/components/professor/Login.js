@@ -17,7 +17,7 @@ export default function Login() {
 			await login(password);
 			navigate("/professor/dashboard", { replace: true });
 		} catch (e) {
-			setErr(e.message || "Login failed");
+			setErr(e.message || "Login Failed");
 		} finally {
 			setSubmitting(false);
 		}
@@ -41,7 +41,13 @@ export default function Login() {
 						aria-label="Professor password"
 					/>
 				</label>
-				{err && <div className="text-red-600 text-sm">{err}</div>}
+
+				{err && (
+					<div className="text-red-600 text-md font-medium text-center">
+						{err}
+					</div>
+				)}
+
 				<button
 					disabled={submitting}
 					className="w-full py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"

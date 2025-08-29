@@ -2,6 +2,38 @@ import { useState } from "react";
 import SlideRow from "./SlideRow";
 import SlideModal from "./SlideModal";
 
+function SessionInformation({ slides, hasAudio, hasConversation, data }) {
+	const slidesAnalyzed = `📊 ${slides.length} slides analyzed •`;
+	const audioProcessed = hasAudio
+		? " 🎙️ Audio processed  •"
+		: " ⚠️ No audio  •";
+	const qaIncluded = hasConversation ? " 💬 Q&A included" : " No Q&A";
+	const qaSegmentCount = data?.metadata?.qa_segments_count || 0;
+	const audioSegments =
+		data?.metadata?.has_qa_audio ??
+		` • 🎧 ${qaSegmentCount} Q&A audio segment${qaSegmentCount > 1 ? "" : "s"}`;
+
+	return (
+		<>
+			<div
+				style={{
+					fontWeight: "bold",
+					color: "#1565c0",
+					marginBottom: "5px",
+				}}
+			>
+				Session Information
+			</div>
+			<div style={{ fontSize: "14px", color: "#1976d2" }}>
+				{slidesAnalyzed}
+				{audioProcessed}
+				{qaIncluded}
+				{audioSegments}
+			</div>
+		</>
+	);
+}
+
 /**
  * Props:
  * - data: either structured (with slides, metadata, qa_feedback) or legacy ({ feedback_type:'legacy', legacy_text })
@@ -262,20 +294,12 @@ export default function FeedbackDisplay({
 							border: "1px solid #90caf9",
 						}}
 					>
-						<div
-							style={{
-								fontWeight: "bold",
-								color: "#1565c0",
-								marginBottom: "5px",
-							}}
-						>
-							Session Information
-						</div>
-						<div style={{ fontSize: "14px", color: "#1976d2" }}>
-							📊 {slides.length} slides analyzed •
-							{hasAudio ? " 🎙️ Audio processed" : " ⚠️ No audio"} •
-							{hasConversation ? " 💬 Q&A included" : " No Q&A"}
-						</div>
+						<SessionInformation
+							slides={slides}
+							hasAudio={hasAudio}
+							hasConversation={hasConversation}
+							data={data}
+						/>
 					</div>
 
 					{/* Slides Table */}

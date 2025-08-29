@@ -1,7 +1,9 @@
 import { useMemo, useState, useCallback } from "react";
+
 import SessionTable from "./SessionTable";
 import RefreshIcon from "../ui/RefreshIcon";
 import LogoutButton from "../ui/LogoutButton";
+
 import { listProfessorSessions } from "../../services/api";
 import { usePolling } from "../../hooks/usePolling";
 

@@ -35,20 +35,8 @@ export default function SessionTable({
 						sortDir={sortDir}
 						onSortChange={onSortChange}
 					/>
-					<TableSortHeader
-						field="status"
-						label="Status"
-						sortField={sortField}
-						sortDir={sortDir}
-						onSortChange={onSortChange}
-					/>
-					<TableSortHeader
-						field="feedback"
-						label="Feedback"
-						sortField={sortField}
-						sortDir={sortDir}
-						onSortChange={onSortChange}
-					/>
+					<th>Score</th>
+					{/* TODO: Add overall Score Card Column */}
 				</tr>
 			</thead>
 			<tbody>
