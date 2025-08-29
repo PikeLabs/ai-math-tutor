@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import FeedbackDisplay from "../components/feedback/FeedbackDisplay";
-import { getTestFeedback } from "../services/api"; // Adjust the import path as needed
+import FeedbackReport from "../components/feedback/FeedbackReport";
+// import { getTestFeedback } from "../services/api"; // Adjust the import path as needed
 
 export default function FeedbackPage() {
 	const [feedbackData, setFeedbackData] = useState(null);
@@ -8,23 +8,23 @@ export default function FeedbackPage() {
 
 	const goBack = () => window.history.back();
 
-	const handleLoadTestFeedback = async () => {
-		try {
-			const data = await getTestFeedback();
-			if (data?.feedback) {
-				const legacyData = {
-					feedback_type: "legacy",
-					slides: [],
-					qa_feedback: null,
-					legacy_text: data.feedback,
-				};
-				localStorage.setItem("pitchFeedback", JSON.stringify(legacyData));
-				setFeedbackData(legacyData);
-			}
-		} catch (error) {
-			console.error("Error loading test feedback:", error);
-		}
-	};
+	// const handleLoadTestFeedback = async () => {
+	// 	try {
+	// 		const data = await getTestFeedback();
+	// 		if (data?.feedback) {
+	// 			const legacyData = {
+	// 				feedback_type: "legacy",
+	// 				slides: [],
+	// 				qa_feedback: null,
+	// 				legacy_text: data.feedback,
+	// 			};
+	// 			localStorage.setItem("pitchFeedback", JSON.stringify(legacyData));
+	// 			setFeedbackData(legacyData);
+	// 		}
+	// 	} catch (error) {
+	// 		console.error("Error loading test feedback:", error);
+	// 	}
+	// };
 
 	useEffect(() => {
 		const storedFeedback = localStorage.getItem("pitchFeedback");
@@ -56,18 +56,20 @@ export default function FeedbackPage() {
 
 	if (loading) {
 		return (
-			<div style={{ padding: 20 }}>
+			<div className="p-6">
 				<h1>Loading Feedback...</h1>
 			</div>
 		);
 	}
 
 	return (
-		<FeedbackDisplay
-			data={feedbackData}
-			readOnly={false}
-			onBack={goBack}
-			onLoadTest={handleLoadTestFeedback}
-		/>
+		<div className="flex justify-center p-2">
+			<div className="w-full max-w-5xl">
+				<h1 className="text-xl font-semibold mb-4 text-center">
+					Generated Feedback
+				</h1>
+				<FeedbackReport feedback={feedbackData} />
+			</div>
+		</div>
 	);
 }

@@ -30,7 +30,7 @@ function FeedbackItem({ item, label }) {
 		<div className="mb-1.5 p-2 border border-gray-200 rounded-md bg-white">
 			<strong className="text-slate-800">{label}: </strong>
 			<span className={`font-bold ${statusColorClass}`}>{statusIcon}</span>
-			<div className="text-sm leading-relaxed text-slate-600 mt-1">
+			<div className="text-sm leading-relaxed text-slate-600 mt-2">
 				{feedbackComment}
 			</div>
 		</div>
@@ -114,12 +114,12 @@ function ImageContainer({ image_url, alt, onClick }) {
 	);
 
 	return (
-		<div className="w-[180px] h-[120px] mx-auto flex items-center justify-center group">
+		<div className="mx-auto flex flex-col justify-center align-center gap-3">
 			{!imageError && (
 				<SlideImage
 					src={thumbSrc}
 					alt={alt}
-					className="h-full object-contain border-2 border-gray-300 rounded cursor-pointer transition-colors duration-200 group-hover:border-gray-500"
+					className="object-contain border-2 border-gray-300 rounded cursor-pointer transition-colors duration-200 hover:border-gray-500"
 					onClick={onClick}
 					onError={handleImageError}
 				/>
@@ -166,8 +166,9 @@ function FeedbackReportDetail({
 	onImageClick,
 }) {
 	const imageColumnText = `Slide ${slide_number}`;
-	const tableDataClass = "p-4 align-top bg-gray-50 text-center";
-
+	const tableDataClass = "p-4 bg-gray-50 text-center";
+	const imageParentClass =
+		tableDataClass + " flex flex-col justify-between h-full";
 	const handleImageClick = () => {
 		if (image_url_full) {
 			const fullImageSrc = `${IMAGE_BASE}${image_url_full}`;
@@ -178,7 +179,7 @@ function FeedbackReportDetail({
 	return (
 		<tr className="border-b border-gray-200">
 			{/* Image Column */}
-			<td className={tableDataClass}>
+			<td className={imageParentClass}>
 				<ColumnHeader title={imageColumnText} />
 				<ImageContainer
 					image_url={image_url}
@@ -254,7 +255,7 @@ export default function FeedbackReport({ feedback }) {
 	const hasConversation = !!feedback?.metadata?.has_conversation;
 
 	return (
-		<div className="w-full bg-white rounded border border-gray-200 overflow-hidden">
+		<div className="bg-white rounded border border-gray-200 overflow-hidden">
 			{/* Session Info (metadata) Banner */}
 			<div className="bg-[#e3f2fd] p-4 border-b border-[#90caf9]">
 				<SessionInformation
