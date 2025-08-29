@@ -49,7 +49,13 @@ def update_session(session_id: str, data: Dict[str, Any]):
 
 # fetch all student sessions with feedback
 def list_sessions():
-    return db.session.find_many(include={"student": True, "feedback": True})
+    return db.session.find_many(
+        include={
+            "student": True,
+            "feedback": True,
+            "conversations": True,
+        }
+    )
 
 
 # --- Conversations ---

@@ -89,7 +89,7 @@ def api_list_sessions_route():
 def api_get_session_route(session_id: str):
     s = get_session_by_id(session_id)
     if not s:
-        return not_found()
+        return not_found("Session not found")
     return ok(s.dict())
 
 
