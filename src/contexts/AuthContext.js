@@ -33,18 +33,23 @@ export default function AuthProvider({ children }) {
 	}, []);
 
 	const login = async (password) => {
+		setIsProfessor(false);
+
 		try {
-			const data = await professorLogin(password);
+			await professorLogin(password);
 
 			const { isProfessor } = await checkIsProfessor();
-			setIsProfessor(!!isProfessor);
+			if (!isProfessor) {
+				throw new Error("Invalid Password");
+			}
+
+			setIsProfessor(true);
+			return true;
 		} catch (error) {
 			setIsProfessor(false);
 			console.error("Login failed:", error);
 			throw error;
 		}
-
-		return true;
 	};
 
 	const logout = async () => {

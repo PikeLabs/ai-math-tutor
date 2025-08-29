@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 
 export default function Login() {
@@ -8,6 +8,7 @@ export default function Login() {
 	const [submitting, setSubmitting] = useState(false);
 	const { login } = useAuth();
 	const navigate = useNavigate();
+	const location = useLocation();
 
 	const onSubmit = async (e) => {
 		e.preventDefault();
@@ -15,9 +16,11 @@ export default function Login() {
 		setSubmitting(true);
 		try {
 			await login(password);
-			navigate("/professor/dashboard", { replace: true });
+			const from = location.state?.from || "/professor/dashboard";
+			navigate(from, { replace: true });
 		} catch (e) {
 			setErr(e.message || "Login Failed");
+			setPassword("");
 		} finally {
 			setSubmitting(false);
 		}

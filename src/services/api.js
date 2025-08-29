@@ -9,6 +9,7 @@ export async function professorLogin(password) {
 		credentials: "include",
 		body: JSON.stringify({ password }),
 	});
+
 	let data;
 	try {
 		data = await r.json();
@@ -18,7 +19,7 @@ export async function professorLogin(password) {
 		throw new Error(`Login Failed: ${errMsg}`);
 	}
 
-	if (!r.ok) {
+	if (!r.ok || data?.error) {
 		const errMsg = data?.error || r.statusText || "Unknown error";
 		throw new Error(`Login Failed: ${errMsg}`);
 	}
@@ -45,7 +46,7 @@ export async function professorLogout() {
 	if (!r.ok) {
 		const text = await r.text().catch(() => "");
 		const errMsg = text || r.statusText || "Unknown error";
-		throw new Error(`Login Failed: ${errMsg}`);
+		throw new Error(`Logout Failed: ${errMsg}`);
 	}
 
 	return data;
@@ -480,8 +481,11 @@ export const postAssignmentSlides = async (assignment, { start, end }) => {
 };
 
 export async function getSessionFeedback(sessionId) {
-	const r = await fetch(`${ENDPOINTS.feedback.bySession}/${sessionId}`, {
+	const r = await fetch(`${ENDPOINTS.professor.session(sessionId)}`, {
 		method: "GET",
+		credentials: "include",
+		headers: { Accept: "application/json" },
+		cache: "no-store",
 	});
 
 	let data;
@@ -498,5 +502,5 @@ export async function getSessionFeedback(sessionId) {
 		throw new Error(`Post Assignment Slides Failed: ${errMsg}`);
 	}
 
-	return data;
+	return data?.feedback?.structured || data?.feedback || data;
 }
