@@ -3,14 +3,16 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
-import RecordPromptModal from "./components/modal/RecordPromptModal";
-import { PausedIcon, RecordingIcon } from "./components/ui/RecordingIcon";
-import { postPdfForSlides } from "./services/api";
-import { useAppContext } from "./contexts/AppContext";
-import { formatTime } from "./utils/recording.utils";
+import RecordPromptModal from "./modal/RecordPromptModal";
+import { PausedIcon, RecordingIcon } from "./ui/RecordingIcon";
+import { postPdfForSlides } from "../services/api";
+import { useAppContext } from "../contexts/AppContext";
+import { useSession } from "../contexts/SessionContext";
+import { formatTime } from "../utils/recording.utils";
 
 // Use the local worker from public directory
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
+const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10MB; adjust if needed
 
 function RecordingStatus({ isRecording, isPaused, recordingTime }) {
 	const textStyles = "text-md font-medium";
@@ -82,6 +84,7 @@ function AdvanceSlideButton({
 }
 
 export default function PDFViewer() {
+	const { sessionId } = useSession();
 	const {
 		autoUnlockReady,
 		isPaused,
@@ -114,7 +117,6 @@ export default function PDFViewer() {
 	// show modal after successful upload
 	const [showRecordModal, setShowRecordModal] = useState(false);
 
-	// TODO: Test this flow
 	// ref to hidden replace-file input (for "upload different file")
 	const replaceInputRef = useRef(null);
 
@@ -154,53 +156,82 @@ export default function PDFViewer() {
 		}
 	}, [slideTimestamps, onSlideTimestampsChange]);
 
-	const FILE_TYPE_PDF = "application/pdf";
 	const handleFileUpload = async (event) => {
-		const file = event.target.files[0];
-		if (file && file.type === FILE_TYPE_PDF) {
-			setUploadedFile(file);
-			setUploadedFileName(file.name);
-			setLoading(true);
-			setError(null);
+		const file = event.target.files && event.target.files[0];
+
+		// Be liberal in what we accept: some browsers leave type empty
+		const fileType = file?.type || "";
+		const fileName = file?.name || "";
+		const isPdfByType =
+			fileType === "application/pdf" ||
+			fileType === "application/x-pdf" ||
+			fileType === "application/acrobat";
+		const isPdfByName = /\.pdf$/i.test(fileName || "");
+		if (!file || !(isPdfByType || isPdfByName)) {
+			setError("Please upload a valid PDF file.");
+			return;
+		}
+
+		if (file.size > MAX_PDF_BYTES) {
+			setError(
+				`PDF too large (max ${Math.round(MAX_PDF_BYTES / (1024 * 1024))}MB).`
+			);
+			return;
+		}
+
+		// Optimistically set UI; if upload fails we'll reset
+		setUploadedFile(file);
+		setUploadedFileName(file.name);
+		setLoading(true);
+		setError(null);
+		setNumPages(null);
+		setPageNumber(1);
+		setIsLocked(false);
+		setUnlockedSlides(new Set());
+
+		// Build Form:
+		const formData = new FormData();
+		formData.append("file", file);
+
+		// include DB session so backend can update Session row
+		if (sessionId) {
+			formData.append("sessionId", sessionId);
+		}
+
+		// include the last processing session id so the backend can clean local images
+		const prevUploadId = localStorage.getItem("currentPDFUploadId");
+
+		if (prevUploadId) {
+			formData.append("previousUploadId", prevUploadId);
+		}
+
+		try {
+			const data = await postPdfForSlides(formData);
+
+			// persist the NEW upload id and slide count
+			localStorage.setItem("currentPDFUploadId", data.upload_id); // keep compat if backend still returns session_id
+			localStorage.setItem("currentPDFSlideCount", String(data.slide_count));
+
+			// // Use server-provided safe filename for /assignments/slides
+			if (onAssignmentChange) {
+				onAssignmentChange(data.filename); // Use the safe filename that was saved to assignments
+			}
+
+			// Optional: if we want to be able to resume a session later and stream from S3:
+			if (data.s3_url) {
+				localStorage.setItem("currentPDFS3Url", data.s3_url);
+			}
+		} catch (error) {
+			console.error("❌ PDF upload error:", error);
+			setError(`Upload error: ${error.message}`);
+
+			// revert optimistic UI so user can pick again
+			setUploadedFile(null);
+			setUploadedFileName("");
 			setNumPages(null);
 			setPageNumber(1);
-			setIsLocked(false);
-			setUnlockedSlides(new Set());
-
-			try {
-				// Process PDF to extract slide images
-				console.log("📄 Processing PDF for slide extraction...");
-				const formData = new FormData();
-				formData.append("file", file);
-
-				const response = await postPdfForSlides(formData);
-				const data = await response.json();
-
-				if (response.ok) {
-					// // Only way to start recording is via this modal
-					// setShowRecordModal(true);
-
-					console.log("✅ PDF processed successfully:", data);
-					// Store session ID for later use in feedback
-					localStorage.setItem("currentPDFSession", data.session_id);
-					localStorage.setItem("currentPDFSlideCount", data.slide_count);
-
-					// Notify parent component about file upload using the server-generated filename
-					if (onAssignmentChange) {
-						onAssignmentChange(data.filename); // Use the safe filename that was saved to assignments
-					}
-				} else {
-					console.error("❌ PDF processing failed:", data.error);
-					setError(`Failed to process PDF: ${data.error}`);
-				}
-			} catch (error) {
-				console.error("❌ PDF upload error:", error);
-				setError(`Upload error: ${error.message}`);
-			} finally {
-				setLoading(false);
-			}
-		} else {
-			setError("Please select a valid PDF file");
+		} finally {
+			setLoading(false);
 		}
 	};
 
@@ -489,18 +520,6 @@ export default function PDFViewer() {
 					isPaused={isPaused}
 					recordingTime={recordingTime}
 				/>
-
-				{/* {currentRecordingSegment && (
-					<div className="audio-playback">
-						<p>Latest Recording Segment:</p>
-						<audio>
-							<source
-								src={URL.createObjectURL(currentRecordingSegment)}
-								type="audio/wav"
-							/>
-						</audio>
-					</div>
-				)} */}
 			</div>
 		</div>
 	);
