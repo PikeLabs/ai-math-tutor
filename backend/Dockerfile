@@ -18,16 +18,13 @@ RUN python -m pip install --upgrade pip \
  && python -m pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy backend code
-COPY backend/ /app/backend/
+COPY . /app/backend/
 
 # Create directories used by the app (and let Compose mount them as volumes)
 RUN mkdir -p /app/backend/assignments /app/backend/slide_images /app/backend/audio_sessions
 
 # Tell Prisma where the schema is (inside backend/)
 ENV PRISMA_SCHEMA=/app/backend/prisma/schema.prisma
-
-# Create runtime dirs
-RUN mkdir -p /app/backend/assignments /app/backend/slide_images /app/backend/audio_sessions
 
 
 # Expose Flask port

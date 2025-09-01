@@ -9,9 +9,12 @@ services:
     environment:
       - CI=false
     volumes:
-      # live-edit React code
-      - ./:/app
-      # But ignore node_modules on the host
+      - ./package.json:/app/package.json
+      - ./package-lock.json:/app/package-lock.json
+      - ./public:/app/public
+      - ./src:/app/src
+      - ./tailwind.config.js:/app/tailwind.config.js
+      - ./postcss.config.js:/app/postcss.config.js
       - /app/node_modules
     ports:
       - "3000:3000"
@@ -21,8 +24,8 @@ services:
 
   backend:
     build:
-      context: .
-      dockerfile: ./backend/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: ai-math-backend
     env_file: ./backend/.env
     environment:

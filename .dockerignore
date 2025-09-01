@@ -1,27 +1,12 @@
+# --- VCS & editor cruft ---
 .git
 .gitignore
 .vscode
-
-# Python (backend)
-.Python
-*.pyd
-*.pyc
-*.pyo
-__pycache__/
-**/__pycache__/
-**/*.py[cod]
-**/.pytest_cache/
-**/.mypy_cache/
-**/.ruff_cache/
-backend/.venv/
-backend/venv/
-backend/.tox/
-
+.DS_Store
 
 # Env & compose
 .env
 .env.*
-backend/.env
 docker-compose*.yml
 
 # Frontend (React)
