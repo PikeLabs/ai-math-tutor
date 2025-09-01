@@ -3,12 +3,14 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import FeedbackReport from "../feedback/FeedbackReport";
 import Chevron from "../ui/Chevron";
 import { getProfessorSession } from "../../services/api";
-import { convertDbFeedbackToDisplay } from "../../utils";
+import { convertDbFeedbackToDisplay, toLocale } from "../../utils";
+import PrintableComponent from "../ui/Print";
+import { useReactToPrint } from "react-to-print";
 
-// NOTE: This is a feedback component that are going to keep.
 // TODO: Unistall jspdfMod, h2cMod;
-function DropDownContainer({ toggleOpen, feedbackData, error }) {
+function DropDownContainer({ toggleOpen, feedbackData, error, onPrint, ref }) {
 	if (!toggleOpen) return null;
+
 	if (error) {
 		return (
 			<div className="text-md text-red-600 font-medium py-3">
@@ -17,7 +19,23 @@ function DropDownContainer({ toggleOpen, feedbackData, error }) {
 			</div>
 		);
 	} else if (feedbackData) {
-		return <FeedbackReport feedback={feedbackData} />;
+		return (
+			<div>
+				<div className="flex justify-end mb-2">
+					<button
+						type="button"
+						onClick={onPrint}
+						className="no-print inline-flex items-center gap-2 rounded-lg border px-3 py-1 text-sm font-medium hover:bg-gray-100"
+						aria-label="Print this feedback report"
+					>
+						🖨️ Print
+					</button>
+				</div>
+				<PrintableComponent ref={ref}>
+					<FeedbackReport feedback={feedbackData} />
+				</PrintableComponent>
+			</div>
+		);
 	}
 
 	return (
@@ -48,31 +66,53 @@ function DropDownButton({ toggleOpen, onClick }) {
 const COLS = 6;
 function SessionFeedbackDetails({ session }) {
 	// If dashboard already queries feedback, do I need to call getProfessorSession?
+	const [isLoading, setIsLoading] = useState(false);
 	const [toggleOpen, setToggleOpen] = useState(false);
 	const [err, setErr] = useState("");
 	const [sessionDetails, setSessionDetails] = useState();
 	const [animReady, setAnimReady] = useState(false);
 
 	console.log("SessionFeedbackRow session:", session);
+	console.log("SessionFeedbackRow sessionDetails:", sessionDetails);
 
 	// smooth height transition
 	const panelRef = useRef(null);
+	const printRef = useRef(null);
 
-	// Feedback data for styling consistency???
-	const feedback = session?.feedback || null;
+	// // Feedback data for styling consistency???
+	const handlePrintReport = useReactToPrint({
+		content: () => printRef.current,
+		// Optional: add/override print styles
+		pageStyle: `
+		@page { margin: 12mm; }
+		@media print {
+			body { background: #fff; }
+			nav, .chat-panel, .pagination, .no-print { display: none !important; }
+			.border { border: none !important; }
+			.p-4 { padding: .5rem !important; }
+		}
+		`,
+		removeAfterPrint: true,
+	});
 
 	// Build FeedbackReport data once we have the detailed session
 	const feedbackData = useMemo(() => {
-		const fb = session?.feedback || null;
+		const fb = sessionDetails?.feedback ?? null;
 		if (!fb) return null;
 		return convertDbFeedbackToDisplay(fb);
+	}, [sessionDetails]);
+
+	const meta = useMemo(() => {
+		const created = session?.createdAt ? toLocale(session.createdAt) : "—";
+		const completed = session?.completedAt
+			? toLocale(session.completedAt)
+			: "—";
+		const presentationScore =
+			session?.feedback?.presentationScore ?? "—";
+		return { created, completed, presentationScore };
 	}, [session]);
 
 	const handleDropdownToggle = () => setToggleOpen((v) => !v);
-
-	const handlePrintReport = () => {
-		window.print();
-	};
 
 	useEffect(() => {
 		let raf = requestAnimationFrame(() => setAnimReady(true));
@@ -81,7 +121,7 @@ function SessionFeedbackDetails({ session }) {
 
 	useEffect(() => {
 		let alive = true;
-		if (!toggleOpen || sessionDetails) return;
+		if (!toggleOpen || !!sessionDetails?.feedback) return;
 
 		(async () => {
 			setErr("");
@@ -99,14 +139,8 @@ function SessionFeedbackDetails({ session }) {
 	}, [session, sessionDetails, toggleOpen]);
 
 	// TODO: Need to figure presentationScore out....
-	const presentationScore = feedback?.presentationScore || "—";
+	// const presentationScore = feedback?.presentationScore || "—";
 	const studentName = session.student?.name || "—";
-	const created = session.createdAt
-		? new Date(session.createdAt).toLocaleString()
-		: "—";
-	const completed = session.completedAt
-		? new Date(session.completedAt).toLocaleString()
-		: "—";
 
 	const animMaxHeight = animReady && toggleOpen ? "max-h-[2000px]" : "max-h-0";
 	const animHeightClass = `transition-[max-height] duration-300 ease-in-out overflow-hidden ${animMaxHeight}`;
@@ -131,12 +165,12 @@ function SessionFeedbackDetails({ session }) {
 					{/* TODO: Remove SessionDetails */}
 				</td>
 				{/* Created column */}
-				<td className="py-2 text-md font-medium">{created}</td>
+				<td className="py-2 text-md font-medium">{meta.created}</td>
 				{/* Completed column */}
-				<td className="py-2 text-md font-medium">{completed}</td>
+				<td className="py-2 text-md font-medium">{meta.completed}</td>
 				{/* Score column */}
 				<td className="text-center font-medium py-2 text-md font-medium">
-					{presentationScore}
+					{meta.presentationScore}
 				</td>
 			</tr>
 
@@ -155,6 +189,8 @@ function SessionFeedbackDetails({ session }) {
 								toggleOpen={toggleOpen}
 								feedbackData={feedbackData}
 								error={err}
+								onPrint={handlePrintReport}
+								ref={printRef}
 							/>
 						</div>
 					</div>
