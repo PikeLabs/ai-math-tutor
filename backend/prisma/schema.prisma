@@ -34,7 +34,7 @@ model Session {
   studentId    String
   slideCount   Int?
   pdfUrl       String?
-  status       SessionStatus?
+  status       SessionStatus  @default(created)
   createdAt    DateTime       @default(now())
   completedAt  DateTime?
 
@@ -44,6 +44,7 @@ model Session {
 
   @@index([studentId], map: "idx_session_studentId")
   @@index([status], map: "idx_session_status")
+  @@index([createdAt], map: "idx_session_createdAt") // ← helps dashboard sort/pagination
 }
 
 model Conversation {
@@ -52,7 +53,7 @@ model Conversation {
   role        ConversationRole
   content     String
   slideNumber Int?
-  timestamp   DateTime
+  timestamp   DateTime  @default(now())
   createdAt   DateTime  @default(now())
 
   session     Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)

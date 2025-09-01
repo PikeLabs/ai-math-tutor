@@ -1,3 +1,5 @@
+@import "./styles/print.css";
+
 .App {
   height: 100vh;
   display: flex;
@@ -72,6 +74,10 @@
   background-color: #e8f5e8;
   border-color: #81c784;
   color: #2e7d32;
+}
+
+.intervention-status .stop-speech-btn {
+  margin-left: auto;
 }
 
 .intervention-indicator {

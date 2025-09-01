@@ -1,39 +1,83 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, {
+	createContext,
+	useContext,
+	useState,
+	useEffect,
+	useMemo,
+} from "react";
 
 const SessionCtx = createContext(null);
 export function useSession() {
 	return useContext(SessionCtx);
 }
 
-export function SessionProvider({ children }) {
+const SEEN_KEY = "hasSeenInstructions";
+export default function SessionProvider({ children }) {
 	const [sessionId, setSessionId] = useState(
-		() => localStorage.getItem("sessionId") || ""
+		() => sessionStorage.getItem("sessionId") || ""
 	);
 	const [studentId, setStudentId] = useState(
-		() => localStorage.getItem("studentId") || ""
+		() => sessionStorage.getItem("studentId") || ""
 	);
 	const [studentName, setStudentName] = useState(
-		() => localStorage.getItem("studentName") || ""
+		() => sessionStorage.getItem("studentName") || ""
+	);
+	const [hasSeenInstructions, setHasSeenInstructions] = useState(
+		() => sessionStorage.getItem(SEEN_KEY) === "1"
 	);
 
-    // TODO: Local Storage?
 	useEffect(() => {
-		if (sessionId) localStorage.setItem("sessionId", sessionId);
+		sessionId
+			? sessionStorage.setItem("sessionId", sessionId)
+			: sessionStorage.removeItem("sessionId");
 	}, [sessionId]);
 	useEffect(() => {
-		if (studentId) localStorage.setItem("studentId", studentId);
+		studentId
+			? sessionStorage.setItem("studentId", studentId)
+			: sessionStorage.removeItem("studentId");
 	}, [studentId]);
 	useEffect(() => {
-		if (studentName) localStorage.setItem("studentName", studentName);
+		studentName
+			? sessionStorage.setItem("studentName", studentName)
+			: sessionStorage.removeItem("studentName");
 	}, [studentName]);
+	useEffect(() => {
+		if (hasSeenInstructions) {
+			sessionStorage.setItem(SEEN_KEY, "1");
+		} else {
+			sessionStorage.removeItem(SEEN_KEY);
+		}
+	}, [hasSeenInstructions]);
 
-	const value = {
-		sessionId,
-		setSessionId,
-		studentId,
-		setStudentId,
-		studentName,
-		setStudentName,
+	const clearSessionStorage = () => {
+		setSessionId("");
+		setStudentId("");
+		setStudentName("");
+		setHasSeenInstructions(false);
+		sessionStorage.removeItem("sessionId");
+		sessionStorage.removeItem("studentId");
+		sessionStorage.removeItem("studentName");
+		sessionStorage.removeItem(SEEN_KEY);
 	};
+
+	const markInstructionsSeen = () => setHasSeenInstructions(true);
+	const resetInstructionsSeen = () => setHasSeenInstructions(false);
+
+	const value = useMemo(
+		() => ({
+			clearSession: clearSessionStorage,
+			hasSeenInstructions,
+			markInstructionsSeen,
+			resetInstructionsSeen,
+			sessionId,
+			setSessionId,
+			setStudentId,
+			setStudentName,
+			studentId,
+			studentName,
+		}),
+		[sessionId, studentId, studentName, hasSeenInstructions]
+	);
+
 	return <SessionCtx.Provider value={value}>{children}</SessionCtx.Provider>;
 }

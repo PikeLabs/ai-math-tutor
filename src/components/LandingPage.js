@@ -31,7 +31,6 @@ export default function LandingPage() {
 						type="button"
 						onClick={onStudent}
 						aria-label="Start or resume student session"
-						role="button"
 						className={[
 							"text-left rounded-2xl border p-6 bg-white transition transform",
 							"hover:shadow-md hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500",
@@ -53,7 +52,6 @@ export default function LandingPage() {
 						type="button"
 						onClick={onProfessor}
 						aria-label="Go to professor dashboard"
-						role="button"
 						className={[
 							"text-left rounded-2xl border p-6 bg-white transition transform",
 							"hover:shadow-md hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500",
@@ -62,7 +60,7 @@ export default function LandingPage() {
 					>
 						<div className="text-lg font-semibold mb-1">Professor</div>
 						<p className="text-sm text-gray-600">
-							Review sessions, transcripts, and feedback.
+							Log in to view student sessions
 						</p>
 					</button>
 				</div>

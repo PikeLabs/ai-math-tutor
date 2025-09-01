@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import SlideImage from './SlideImage';
 
 function SlideModal({ imageUrl, slideNumber, isOpen, onClose }) {
   const [imageError, setImageError] = useState(false);
@@ -124,7 +125,7 @@ function SlideModal({ imageUrl, slideNumber, isOpen, onClose }) {
           )}
 
           {!imageError ? (
-            <img
+            <SlideImage
               src={imageUrl}
               alt={`Slide ${slideNumber} - Full Size`}
               style={{

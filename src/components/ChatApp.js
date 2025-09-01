@@ -1,212 +1,216 @@
-import React, { useState, useContext, useEffect } from "react";
+import { useState, useEffect } from "react";
 
-import { useSession } from "../contexts/SessionContext";
-import { createChat, logConversation, saveFeedback } from "../services/api";
-import AppContext from "../contexts/AppContext";
 import TTSService from "../TTSService";
 import Avatar from "../Avatar";
+import { useSession } from "../contexts/SessionContext";
+import { useAppContext } from "../contexts/AppContext";
+import { generateFeedbackMultipart } from "../services/api";
+
+function IncomingChatMessages({ messages, isLoading }) {
+	let messageContent = null;
+	let isLoadingContent = null;
+
+	if (messages && messages.length) {
+		// TODO: We shouldn't be having roles in the messages anymore...
+		messageContent = messages.map(({ role, content }, index) => (
+			<div
+				key={index + content}
+				className={`message ${role}`}
+			>
+				<div className="message-content">{content}</div>
+			</div>
+		));
+	}
+
+	if (isLoading) {
+		isLoadingContent = (
+			<div className="message assistant">
+				<div className="message-content">Thinking...</div>
+			</div>
+		);
+	}
+
+	return (
+		<div className="chat-messages">
+			{messageContent}
+			{isLoadingContent}
+		</div>
+	);
+}
+
+// TODO: Better name for this component
+function VcDisplay({
+	isSpeaking,
+	interventionState,
+	questionsAsked,
+	stopCurrentAudio,
+}) {
+	if (interventionState !== "questioning") return null;
+
+	return (
+		<div className="intervention-status">
+			<span className="intervention-indicator">💬</span>
+			<span className="intervention-text">
+				VC Questions ({questionsAsked}/2)
+			</span>
+
+			<button
+				onClick={stopCurrentAudio}
+				disabled={!isSpeaking}
+				className="stop-speech-btn ml-auto"
+				title="Stop speech"
+			>
+				🔇
+			</button>
+		</div>
+	);
+}
+
+// TODO: Better name for this component
+function GeneratedFeedback({
+	interventionState,
+	feedbackGenerated,
+	isLoading,
+	genError,
+}) {
+	if (interventionState !== "complete") return null;
+	let status = null;
+
+	if (isLoading && !feedbackGenerated) {
+		return (
+			<div className="intervention-status complete complete flex items-center justify-center">
+				<span className="ml-2.5 text-md text-gray-500 font-medium">
+					Generating feedback...
+				</span>
+			</div>
+		);
+	} else if (genError) {
+		return (
+			<div className="intervention-status complete complete flex items-center justify-center">
+				<span className="intervention-indicator mr-2">❌</span>
+				<span className="ml-2.5 text-md text-red-600 font-medium">
+					Failed to generate feedback...
+				</span>
+			</div>
+		);
+	} else if (feedbackGenerated) {
+		return (
+			<div className="intervention-status complete complete flex items-center justify-center">
+				<span className="intervention-indicator mr-2">✅</span>
+				<span className="ml-2.5 text-lg text-green-600 font-medium">
+					<a
+						href="/feedback"
+						className="text-green-700 underline hover:no-underline"
+					>
+						View your feedback
+					</a>
+				</span>
+			</div>
+		);
+	} else {
+		// Edge: complete but not started yet (very brief window)
+		status = (
+			<span className="ml-2.5 text-md text-blue-600 font-medium">
+				Preparing to generate feedback…
+			</span>
+		);
+	}
+
+	return (
+		<div className="intervention-status complete">
+			<span className="intervention-text">
+				Questions Complete — Continue Presentation
+			</span>
+			{status}
+		</div>
+	);
+}
 
 export default function ChatApp() {
+	const { sessionId } = useSession();
 	const {
-		messages,
-		setMessages,
-		selectedAssignment,
-		setSelectedAssignment,
-		isRecording,
-		isPaused,
-		startRecording,
-		stopRecording,
-		pauseRecording,
-		resumeRecording,
-		audioBlob,
-		recordingTime,
-		formatTime,
-		currentRecordingSegment,
+		getLatestRecording,
 		interventionState,
+		messages,
+		qaTimestamps,
 		questionsAsked,
-		handleInterventionResponse,
+		selectedAssignment,
 		slideTimestamps,
-	} = useContext(AppContext);
-    const { sessionId } = useSession();
+	} = useAppContext();
 
-	const [inputMessage, setInputMessage] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
 	const [avatarState, setAvatarState] = useState({
 		isLoading: false,
 		isSpeaking: false,
 	});
 	const [feedbackGenerated, setFeedbackGenerated] = useState(false);
+	const [genError, setGenError] = useState(null);
+	const [hasTriggeredFeedback, setHasTriggeredFeedback] = useState(false);
 
-	// Set up TTS service listeners for avatar state
+	// Keep ChatApp in sync with the TTS engine.
+	// Subscribes to TTSService and updates avatarState whenever the VC starts/stops speaking or is loading audio.
 	useEffect(() => {
-		const handleTTSStateChange = (state) => {
-			console.log("Avatar state update:", state);
-			setAvatarState(state);
-		};
-
+		const handleTTSStateChange = (state) => setAvatarState(state);
 		TTSService.addListener(handleTTSStateChange);
-
-		return () => {
-			TTSService.removeListener(handleTTSStateChange);
-			TTSService.stop();
-		};
+		return () => TTSService.removeListener(handleTTSStateChange);
 	}, []);
+
+	useEffect(() => {
+		if (interventionState === "complete" && !hasTriggeredFeedback) {
+			setHasTriggeredFeedback(true);
+			generateFeedback();
+		}
+	}, [interventionState]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	const stopCurrentAudio = () => {
 		TTSService.stop();
 	};
 
-	const sendMessage = async () => {
-		if (!inputMessage.trim()) return;
-
-		const userMessage = { role: "user", content: inputMessage };
-		setMessages((prev) => [...prev, userMessage]);
-		const messageContent = inputMessage;
-		setInputMessage("");
-		console.log("Setting isLoading to true for processing");
-		setIsLoading(true);
-
-		try {
-			// Check if we're in an intervention and should handle it specially
-			if (interventionState === "questioning") {
-				await handleInterventionResponse(messageContent);
-				setIsLoading(false);
-				return;
-			}
-
-			// Normal chat flow (when not in intervention)
-			// const response = await fetch("http://localhost:5001/api/chat", {
-			// 	method: "POST",
-			// 	headers: {
-			// 		"Content-Type": "application/json",
-			// 	},
-			// 	body: JSON.stringify({
-			// 		messages: [...messages, userMessage],
-			// 		selectedAssignment: selectedAssignment,
-			// 	}),
-			// });
-            const response = await createChat({
-                sessionId,
-                messages: [...messages, userMessage],
-                selectedAssignment,
-                slideNumber: null,
-            });
-
-			const data = await response.json();
-
-			if (response.ok) {
-				const aiMessage = { role: "assistant", content: data.response };
-				setMessages((prev) => [...prev, aiMessage]);
-
-				// Trigger TTS for AI response
-				TTSService.speak(data.response);
-			} else {
-				const errorMessage = {
-					role: "assistant",
-					content: `Error: ${data.error}`,
-				};
-				setMessages((prev) => [...prev, errorMessage]);
-			}
-		} catch (error) {
-			const errorMessage = {
-				role: "assistant",
-				content: `Error: ${error.message}`,
-			};
-			setMessages((prev) => [...prev, errorMessage]);
-		} finally {
-			setIsLoading(false);
-		}
-	};
-
-	const handleKeyDown = (e) => {
-		if (e.key === "Enter" && !e.shiftKey) {
-			e.preventDefault();
-			sendMessage();
-		}
-	};
-
 	const generateFeedback = async () => {
-		if (!messages.length) return;
-
 		setIsLoading(true);
+		setGenError(null);
+
 		try {
-			// Get the latest recording from the context
-			const recordingBlob = currentRecordingSegment;
+			// ensure we have the latest audio by stopping now
+			const recordingBlob = await getLatestRecording();
 
-			// Get PDF session ID and slide count from localStorage
-			const pdfSessionId = localStorage.getItem("currentPDFSession");
-			const pdfSlideCount = localStorage.getItem("currentPDFSlideCount");
-			console.log("📄 Using PDF session ID:", pdfSessionId);
-			console.log("📄 Using PDF slide count:", pdfSlideCount);
-
-			if (recordingBlob) {
-				// Send with recording as multipart form data
-				const formData = new FormData();
-				formData.append("messages", JSON.stringify(messages));
-				formData.append("selectedAssignment", selectedAssignment || "");
-				formData.append("recording", recordingBlob, "presentation.wav");
-				formData.append("slideTimestamps", JSON.stringify(slideTimestamps));
-				formData.append("pdfSessionId", pdfSessionId || "");
-				formData.append("pdfSlideCount", pdfSlideCount || "");
-
-				const response = await fetch("http://localhost:5001/api/feedback", {
-					method: "POST",
-					body: formData,
-				});
-
-				const data = await response.json();
-
-				if (response.ok) {
-					console.log("Feedback response:", data);
-					if (data.session_id || data.slides || data.feedback) {
-						// New structured format or legacy format
-						const feedbackToStore = data.feedback || JSON.stringify(data);
-						localStorage.setItem("pitchFeedback", feedbackToStore);
-						setFeedbackGenerated(true);
-						alert("Feedback generated! Navigate to /feedback to view it.");
-					} else {
-						alert("Error: No feedback received from server");
-					}
-				} else {
-					console.error("Feedback error:", data);
-					alert(`Error generating feedback: ${data.error || "Unknown error"}`);
-				}
-			} else {
-				// Send without recording as JSON
-				const response = await fetch("http://localhost:5001/api/feedback", {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({
-						messages: messages,
-						selectedAssignment: selectedAssignment || "",
-						pdfSessionId: pdfSessionId || "",
-						pdfSlideCount: pdfSlideCount || "",
-					}),
-				});
-
-				const data = await response.json();
-
-				if (response.ok) {
-					console.log("Feedback response (no recording):", data);
-					if (data.session_id || data.slides || data.feedback) {
-						// New structured format or legacy format
-						const feedbackToStore = data.feedback || JSON.stringify(data);
-						localStorage.setItem("pitchFeedback", feedbackToStore);
-						setFeedbackGenerated(true);
-						alert("Feedback generated! Navigate to /feedback to view it.");
-					} else {
-						alert("Error: No feedback received from server");
-					}
-				} else {
-					console.error("Feedback error (no recording):", data);
-					alert(`Error generating feedback: ${data.error || "Unknown error"}`);
-				}
+			if (
+				!recordingBlob ||
+				(recordingBlob.size !== undefined && recordingBlob.size === 0)
+			) {
+				throw new Error("No presentation audio was recorded.");
 			}
-		} catch (error) {
-			console.error("Feedback generation error:", error);
-			alert(`Error generating feedback: ${error.message}`);
+
+			const pdfUploadId = localStorage.getItem("currentPDFUploadId");
+			const pdfSlideCount = localStorage.getItem("currentPDFSlideCount");
+
+			// Send with recording as multipart form data
+			const formData = new FormData();
+			formData.append("messages", JSON.stringify(messages));
+			formData.append("selectedAssignment", selectedAssignment || "");
+			formData.append("recording", recordingBlob, "presentation.wav");
+			formData.append("slideTimestamps", JSON.stringify(slideTimestamps));
+			formData.append("qaTimestamps", JSON.stringify(qaTimestamps));
+			formData.append("pdfUploadId", pdfUploadId || "");
+			formData.append("pdfSlideCount", pdfSlideCount || "");
+			formData.append("sessionId", sessionId);
+
+			const data = await generateFeedbackMultipart(formData);
+			console.log("Feedback generation response:", data);
+			const payloadToStore = data?.structured || data;
+
+			if (
+				payloadToStore?.session_id ||
+				payloadToStore?.slides ||
+				payloadToStore?.feedback ||
+				payloadToStore?.qa_feedback
+			) {
+				localStorage.setItem("pitchFeedback", JSON.stringify(payloadToStore));
+				setFeedbackGenerated(true);
+			}
+		} catch (err) {
+			console.error("Feedback generation failed:", err);
+			setGenError("Feedback generation failed", err);
 		} finally {
 			setIsLoading(false);
 		}
@@ -222,90 +226,26 @@ export default function ChatApp() {
 			<div className="chat-container">
 				<div className="chat-header">
 					<h1>VC Mentor</h1>
-					{interventionState === "questioning" && (
-						<div className="intervention-status">
-							<span className="intervention-indicator">💬</span>
-							<span className="intervention-text">
-								VC Questions ({questionsAsked}/2)
-							</span>
-						</div>
-					)}
-					{interventionState === "complete" && (
-						<div className="intervention-status complete">
-							<span className="intervention-indicator">✅</span>
-							<span className="intervention-text">
-								Questions Complete - Continue Presentation
-							</span>
-							{!feedbackGenerated && (
-								<button
-									onClick={generateFeedback}
-									disabled={isLoading}
-									className="generate-feedback-btn"
-									style={{
-										marginLeft: "10px",
-										padding: "5px 10px",
-										fontSize: "12px",
-									}}
-								>
-									{isLoading ? "Generating..." : "Generate Feedback"}
-								</button>
-							)}
-							{feedbackGenerated && (
-								<span
-									style={{
-										marginLeft: "10px",
-										color: "green",
-										fontSize: "12px",
-									}}
-								>
-									Feedback ready at /feedback
-								</span>
-							)}
-						</div>
-					)}
-				</div>
 
-				<div className="chat-messages">
-					{messages.map((message, index) => (
-						<div
-							key={index}
-							className={`message ${message.role}`}
-						>
-							<div className="message-content">{message.content}</div>
-						</div>
-					))}
-					{isLoading && (
-						<div className="message assistant">
-							<div className="message-content">Thinking...</div>
-						</div>
-					)}
-				</div>
-
-				<div className="chat-input">
-					<textarea
-						value={inputMessage}
-						onChange={(e) => setInputMessage(e.target.value)}
-						onKeyDown={handleKeyDown}
-						placeholder="Tell me about your startup challenge..."
-						disabled={isLoading}
+					<VcDisplay
+						isSpeaking={avatarState.isSpeaking}
+						interventionState={interventionState}
+						questionsAsked={questionsAsked}
+						stopCurrentAudio={stopCurrentAudio}
 					/>
-					<div className="input-controls">
-						<button
-							onClick={sendMessage}
-							disabled={isLoading || !inputMessage.trim()}
-						>
-							Send
-						</button>
-						<button
-							onClick={stopCurrentAudio}
-							disabled={!avatarState.isSpeaking}
-							className="stop-speech-btn"
-							title="Stop speech"
-						>
-							🔇
-						</button>
-					</div>
+
+					<GeneratedFeedback
+						interventionState={interventionState}
+						feedbackGenerated={feedbackGenerated}
+						isLoading={isLoading}
+						genError={genError}
+					/>
 				</div>
+
+				<IncomingChatMessages
+					messages={messages}
+					isLoading={isLoading}
+				/>
 			</div>
 		</div>
 	);

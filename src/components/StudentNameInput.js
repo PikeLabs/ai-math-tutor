@@ -3,7 +3,6 @@ import { useSession } from "../contexts/SessionContext";
 import { createSession } from "../services/api";
 import { useNavigate } from "react-router-dom";
 
-// TODO: let's rename this component to StudentForm
 export default function StudentNameInput() {
 	const [name, setName] = useState("");
 	const [busy, setBusy] = useState(false);

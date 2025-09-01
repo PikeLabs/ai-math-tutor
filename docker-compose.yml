@@ -1,0 +1,75 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.frontend
+    container_name: ai-math-frontend
+    env_file:
+      - .env
+    environment:
+      - CI=false
+    volumes:
+      - ./package.json:/app/package.json
+      - ./package-lock.json:/app/package-lock.json
+      - ./public:/app/public
+      - ./src:/app/src
+      - ./tailwind.config.js:/app/tailwind.config.js
+      - ./postcss.config.js:/app/postcss.config.js
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-math-backend
+    env_file: ./backend/.env
+    environment:
+      - PRISMA_MIGRATE_MODE=dev
+      # Set PRISMA_FRESH="1" before you build to wipe the db
+      - PRISMA_FRESH="0"
+      - FE_ORIGIN=http://localhost:3000
+      - COOKIE_SECURE=0
+    volumes:
+      # optional: live-edit backend code
+      - ./backend:/app/backend
+      - ./storage:/app/backend/storage
+    ports:
+      - "5001:5001"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5001/api/v1/health >/dev/null"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+  db:
+    image: postgres:16-alpine
+    container_name: ai-math-db
+    env_file:
+      - ./backend/.env
+    environment:
+      # Note: I have these hardcoded for development
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin123
+      - POSTGRES_DB=aimath
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d aimath -h localhost -p 5432"]
+      interval: 1m
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  dbdata:
