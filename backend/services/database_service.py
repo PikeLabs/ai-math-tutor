@@ -35,9 +35,6 @@ def get_session_by_id(session_id: str):
             "feedback": True,
             "conversations": {
                 "orderBy": {"timestamp": "asc"},
-                "include": {
-                    "session": True  # Include session details in conversations
-                },
             },
         },
     )
@@ -49,18 +46,36 @@ def update_session(session_id: str, data: Dict[str, Any]):
 
 # fetch all student sessions with feedback
 def list_sessions():
-    return db.session.find_many(
+    rows = db.session.find_many(
         include={
-            "student": True,
-            "feedback": True,
-            "conversations": {
-                "orderBy": {"timestamp": "asc"},
-                "include": {
-                    "session": True  # Include session details in conversations
-                },
-            },
-        }
+            "student": True,  # brings Student model (or None)
+            "feedback": True,  # brings Feedback model (or None)
+        },
+        order={"createdAt": "desc"},
     )
+
+    trimmed = []
+    for r in rows:
+        stu = r.student
+        fb = r.feedback
+
+        trimmed.append(
+            {
+                "id": r.id,
+                # If your JSON encoder can’t handle datetimes, use .isoformat():
+                "createdAt": r.createdAt,  # or r.createdAt.isoformat()
+                "completedAt": r.completedAt,  # or r.completedAt.isoformat() if not None
+                "student": ({"id": stu.id, "name": stu.name} if stu else None),
+                "feedback": {
+                    "presentationScore": (fb.presentationScore if fb else None),
+                },
+                # Uncomment if you sort/filter by these in the UI:
+                # "slideCount": r.slideCount,
+                # "status": r.status,
+            }
+        )
+
+    return trimmed
 
 
 # --- Conversations ---

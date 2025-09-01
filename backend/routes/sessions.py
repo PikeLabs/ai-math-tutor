@@ -81,7 +81,7 @@ def api_patch_session(session_id: str):
 @professor_required
 def api_list_sessions_route():
     rows = list_sessions()
-    return ok([r.dict() for r in rows])
+    return ok(rows)
 
 
 @bp.get("/professor/session/<session_id>")
