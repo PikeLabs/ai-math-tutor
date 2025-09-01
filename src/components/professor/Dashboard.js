@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from "react";
 
-import SessionTable from "./SessionTable";
+import SessionFeedbackTable from "./SessionFeedbackTable";
 import RefreshIcon from "../ui/RefreshIcon";
 import LogoutButton from "../ui/LogoutButton";
 
@@ -159,7 +159,7 @@ export default function Dashboard() {
 				<div className="text-sm text-gray-500 mb-2">Loading…</div>
 			)}
 
-			<SessionTable
+			<SessionFeedbackTable
 				rows={paged}
 				busy={isLoading}
 				sortField={sortField}

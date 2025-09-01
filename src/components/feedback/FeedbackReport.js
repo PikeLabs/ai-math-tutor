@@ -22,8 +22,9 @@ const statusClassMap = {
 function FeedbackItem({ item, label }) {
 	const { status, comment } = item || {};
 
-	const statusColorClass = statusClassMap[status || "unknown"];
-	const statusIcon = statusIconMap[status || ""];
+	const statusKey = status || "unknown";
+	const statusColorClass = statusClassMap[statusKey];
+	const statusIcon = statusIconMap[statusKey];
 	const feedbackComment = comment || "No feedback available";
 
 	return (
@@ -73,10 +74,7 @@ function AudioContainer({ audio_url }) {
 		);
 	}
 
-	const handleAudioError = () => {
-		setAudioError(true);
-	};
-
+	const handleAudioError = () => setAudioError(true);
 	const audioSrc = `${IMAGE_BASE}${audio_url}`;
 
 	return (
@@ -134,7 +132,7 @@ function ImageContainer({ image_url, alt, onClick }) {
 	);
 }
 
-function SessionInformation({ hasAudio, hasConversation, feedback }) {
+function SessionMetaInformation({ hasAudio, hasConversation, feedback }) {
 	const qaSegCount = feedback?.metadata?.qa_segments_count || 0;
 	const slidesAnalyzed = `📊 ${feedback.slides.length} slides analyzed •`;
 	const audioProcessed = hasAudio ? " 🎙️ Audio processed •" : " ⚠️ No audio •";
@@ -169,6 +167,7 @@ function FeedbackReportDetail({
 	const tableDataClass = "p-4 bg-gray-50 text-center";
 	const imageParentClass =
 		tableDataClass + " flex flex-col justify-between h-full";
+
 	const handleImageClick = () => {
 		if (image_url_full) {
 			const fullImageSrc = `${IMAGE_BASE}${image_url_full}`;
@@ -218,12 +217,73 @@ function FeedbackReportTableBody({ slides, onImageClick }) {
 	));
 }
 
+function QAFeedback({ qa }) {
+	if (!qa) return null;
+
+	const badge = (status) => {
+		const k = status || "unknown";
+		const cls = statusClassMap[k];
+		const icon = statusIconMap[k];
+
+		return <span className={`ml-2 font-bold ${cls}`}>{icon}</span>;
+	};
+
+	const sessionFeedbackText = "Q&A Session Feedback";
+	const impromptuResponseIcon = badge(qa.impromptu_response?.status);
+	const impromptuResponseComment =
+		qa.impromptu_response?.comment || "No comment provided.";
+	const composureIcon = badge(qa.composure?.status);
+	const composureComment = qa.composure?.comment || "No comment provided.";
+
+	return (
+		<div className="mt-6 p-4 bg-[#f8f9fa] rounded border border-[#e9ecef]">
+			<h3 className="text-lg font-semibold text-slate-800 border-b-2 border-[#3498db] pb-2 mb-4">
+				{sessionFeedbackText}
+			</h3>
+
+			<div className="flex flex-col md:flex-row gap-4">
+				<div className="flex-1 min-w-[280px] p-4 bg-white rounded border border-gray-200">
+					<div className="font-semibold text-slate-800 mb-2 flex items-center">
+						<span>Impromptu Response:</span>
+						{impromptuResponseIcon}
+					</div>
+					<div className="text-sm text-slate-600 leading-relaxed">
+						{impromptuResponseComment}
+					</div>
+				</div>
+
+				<div className="flex-1 min-w-[280px] p-4 bg-white rounded border border-gray-200">
+					<div className="font-semibold text-slate-800 mb-2 flex items-center">
+						<span>Composure:</span>
+						{composureIcon}
+					</div>
+					<div className="text-sm text-slate-600 leading-relaxed">
+						{composureComment}
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function LegacyFeedback({ text }) {
+	if (!text) return null;
+
+	return (
+		<div className="bg-white rounded border border-gray-200 overflow-hidden">
+			<div className="bg-yellow-50 text-yellow-800 border border-yellow-300 p-3">
+				📝 This is legacy feedback format. New feedback will show as a
+				structured table with slide images and audio.
+			</div>
+			<div className="p-6 whitespace-pre-line text-slate-800">{text}</div>
+		</div>
+	);
+}
+
 /**
  * FeedbackReport
  * Props:
- * - data: structured feedback payload (same shape you already use in FeedbackDisplay)
- * - hideImages?: boolean  // when true, omit the Slide (thumbnail) column
- * - readOnly?: boolean    // hides any top controls (kept for parity)
+ * - feedback: structured feedback payload
  */
 export default function FeedbackReport({ feedback }) {
 	const [modalImage, setModalImage] = useState(null);
@@ -235,6 +295,14 @@ export default function FeedbackReport({ feedback }) {
 			<div className="w-full bg-white p-10 rounded border border-gray-200 text-center text-gray-600">
 				No feedback available.
 			</div>
+		);
+	}
+
+	if (feedback.feedback_type === "legacy") {
+		return (
+			<LegacyFeedback
+				text={feedback.legacy_text || "No feedback text provided."}
+			/>
 		);
 	}
 
@@ -251,6 +319,7 @@ export default function FeedbackReport({ feedback }) {
 	};
 
 	const slides = feedback.slides || [];
+	const hasSlides = slides.length > 0;
 	const hasAudio = !!feedback?.metadata?.has_audio;
 	const hasConversation = !!feedback?.metadata?.has_conversation;
 
@@ -258,34 +327,45 @@ export default function FeedbackReport({ feedback }) {
 		<div className="bg-white rounded border border-gray-200 overflow-hidden">
 			{/* Session Info (metadata) Banner */}
 			<div className="bg-[#e3f2fd] p-4 border-b border-[#90caf9]">
-				<SessionInformation
+				<SessionMetaInformation
 					hasAudio={hasAudio}
 					hasConversation={hasConversation}
 					feedback={feedback}
 				/>
 			</div>
-			<table className="w-full border-collapse">
-				<thead>
-					<tr className="bg-gray-50 border-b border-gray-200">
-						<th className="px-4 py-3 text-center font-semibold text-slate-600 w-[220px]">
-							Slide
-						</th>
-						<th className="px-4 py-3 text-center font-semibold text-slate-600">
-							Learning Objectives Feedback
-						</th>
-						<th className="px-4 py-3 text-center font-semibold text-slate-600 w-[220px]">
-							Audio
-						</th>
-					</tr>
-				</thead>
 
-				<tbody>
-					<FeedbackReportTableBody
-						slides={slides}
-						onImageClick={handleImageClick}
-					/>
-				</tbody>
-			</table>
+			{hasSlides && (
+				<table className="w-full border-collapse">
+					<thead>
+						<tr className="bg-gray-50 border-b border-gray-200">
+							<th className="px-4 py-3 text-center font-semibold text-slate-600 w-[220px]">
+								Slide
+							</th>
+							<th className="px-4 py-3 text-center font-semibold text-slate-600">
+								Learning Objectives Feedback
+							</th>
+							<th className="px-4 py-3 text-center font-semibold text-slate-600 w-[220px]">
+								Audio
+							</th>
+						</tr>
+					</thead>
+
+					<tbody>
+						<FeedbackReportTableBody
+							slides={slides}
+							onImageClick={handleImageClick}
+						/>
+					</tbody>
+				</table>
+			)}
+
+			{!hasSlides && (
+				<div className="p-8 text-center text-gray-600">
+					No slide feedback available.
+				</div>
+			)}
+
+			<QAFeedback qa={feedback.qa_feedback} />
 
 			<div className="mt-8 text-sm text-gray-600 text-center p-5 bg-white rounded-md border border-gray-200">
 				This feedback was generated based on your pitch presentation and Q&A
