@@ -1,6 +1,5 @@
-import React from "react";
 import { Navigate } from "react-router-dom";
-import { useSession } from "../contexts/SessionContext";
+import { useSession } from "../hooks/useSession";
 
 export default function RequireSession({ children }) {
 	const { sessionId } = useSession();

@@ -6,8 +6,8 @@ import "react-pdf/dist/Page/TextLayer.css";
 import RecordPromptModal from "./modal/RecordPromptModal";
 import { PausedIcon, RecordingIcon } from "./ui/RecordingIcon";
 import { postPdfForSlides } from "../services/api";
-import { useAppContext } from "../contexts/AppContext";
-import { useSession } from "../contexts/SessionContext";
+import { useAppContext } from "../hooks/useAppContext";
+import { useSession } from "../hooks/useSession";
 import { formatTime } from "../utils/recording.utils";
 
 // Use the local worker from public directory
@@ -218,6 +218,7 @@ export default function PDFViewer() {
 			}
 
 			// Optional: if we want to be able to resume a session later and stream from S3:
+			// TODO: Not sure if we need this?
 			if (data.s3_url) {
 				localStorage.setItem("currentPDFS3Url", data.s3_url);
 			}

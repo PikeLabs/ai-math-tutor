@@ -1,7 +1,6 @@
 import {
 	createContext,
 	useCallback,
-	useContext,
 	useEffect,
 	useMemo,
 	useRef,
@@ -21,8 +20,7 @@ import {
 } from "../utils";
 import { useVAD } from "../hooks/useVAD";
 
-const AppContext = createContext(null);
-export const useAppContext = () => useContext(AppContext);
+export const AppContext = createContext(null);
 
 export default function AppProvider({ children, sessionId }) {
 	// Chat state

@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 
 import TTSService from "../TTSService";
 import Avatar from "../Avatar";
-import { useSession } from "../contexts/SessionContext";
-import { useAppContext } from "../contexts/AppContext";
+import { useSession } from "../hooks/useSession";
+import { useAppContext } from "../hooks/useAppContext";
 import { generateFeedbackMultipart } from "../services/api";
 
 function IncomingChatMessages({ messages, isLoading }) {

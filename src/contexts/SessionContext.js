@@ -1,15 +1,6 @@
-import React, {
-	createContext,
-	useContext,
-	useState,
-	useEffect,
-	useMemo,
-} from "react";
+import { createContext, useState, useEffect, useMemo } from "react";
 
-const SessionCtx = createContext(null);
-export function useSession() {
-	return useContext(SessionCtx);
-}
+export const SessionCtx = createContext(null);
 
 const SEEN_KEY = "hasSeenInstructions";
 export default function SessionProvider({ children }) {
@@ -26,21 +17,41 @@ export default function SessionProvider({ children }) {
 		() => sessionStorage.getItem(SEEN_KEY) === "1"
 	);
 
+	// TODO: incorporate these into PDFViewer, FeedbackPage, etc...
+	// const [currentPDFUploadId, setCurrentPDFUploadId] = useState(
+	// 	() => sessionStorage.getItem("currentPDFUploadId") || ""
+	// );
+	// const [previousUploadId, setPreviousUploadId] = useState(
+	// 	() => sessionStorage.getItem("previousUploadId") || ""
+	// );
+	// const [currentPDFSlideCount, setCurrentPDFSlideCount] = useState(
+	// 	() => sessionStorage.getItem("currentPDFSlideCount") || ""
+	// );
+	// const [currentPDFS3Url, setCurrentPDFS3Url] = useState(
+	// 	() => sessionStorage.getItem("currentPDFS3Url") || ""
+	// );
+	// const [pitchFeedback, setPitchFeedback] = useState(
+	// 	() => sessionStorage.getItem("pitchFeedback") || ""
+	// );
+
 	useEffect(() => {
 		sessionId
 			? sessionStorage.setItem("sessionId", sessionId)
 			: sessionStorage.removeItem("sessionId");
 	}, [sessionId]);
+
 	useEffect(() => {
 		studentId
 			? sessionStorage.setItem("studentId", studentId)
 			: sessionStorage.removeItem("studentId");
 	}, [studentId]);
+
 	useEffect(() => {
 		studentName
 			? sessionStorage.setItem("studentName", studentName)
 			: sessionStorage.removeItem("studentName");
 	}, [studentName]);
+
 	useEffect(() => {
 		if (hasSeenInstructions) {
 			sessionStorage.setItem(SEEN_KEY, "1");
@@ -48,6 +59,13 @@ export default function SessionProvider({ children }) {
 			sessionStorage.removeItem(SEEN_KEY);
 		}
 	}, [hasSeenInstructions]);
+
+	// TODO: Implement
+	// useEffect(() => {}, [currentPDFUploadId]);
+	// useEffect(() => {}, [previousUploadId]);
+	// useEffect(() => {}, [currentPDFSlideCount]);
+	// useEffect(() => {}, [currentPDFS3Url]);
+	// useEffect(() => {}, [pitchFeedback]);
 
 	const clearSessionStorage = () => {
 		setSessionId("");

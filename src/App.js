@@ -12,7 +12,7 @@ import ProfessorRoute from "./components/ProfessorRoute";
 import RequireSession from "./components/RequireSession";
 import StudentFlow from "./components/student/StudentFlow";
 import StudentNameInput from "./components/StudentNameInput";
-import { useSession } from "./contexts/SessionContext";
+import { useSession } from "./hooks/useSession";
 
 import "./App.css";
 
