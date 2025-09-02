@@ -1,14 +1,20 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-
-import FeedbackReport from "../feedback/FeedbackReport";
-import Chevron from "../ui/Chevron";
-import { getProfessorSession } from "../../services/api";
-import { convertDbFeedbackToDisplay, toLocale } from "../../utils";
-import PrintableComponent from "../ui/Print";
 import { useReactToPrint } from "react-to-print";
 
+import FeedbackReport from "../feedback/FeedbackReport";
+import PrintWrapper from "../ui/PrintWrapper";
+import Chevron from "../ui/Chevron";
+import { convertDbFeedbackToDisplay, toLocale } from "../../utils";
+import { getProfessorSession } from "../../services/api";
+
 // TODO: Unistall jspdfMod, h2cMod;
-function DropDownContainer({ toggleOpen, feedbackData, error, onPrint, ref }) {
+function DropDownContainer({
+	toggleOpen,
+	feedbackData,
+	error,
+	onPrint,
+	printRef,
+}) {
 	if (!toggleOpen) return null;
 
 	if (error) {
@@ -31,9 +37,9 @@ function DropDownContainer({ toggleOpen, feedbackData, error, onPrint, ref }) {
 						🖨️ Print
 					</button>
 				</div>
-				<PrintableComponent ref={ref}>
+				<PrintWrapper ref={printRef}>
 					<FeedbackReport feedback={feedbackData} />
-				</PrintableComponent>
+				</PrintWrapper>
 			</div>
 		);
 	}
@@ -81,10 +87,11 @@ function SessionFeedbackDetails({ session }) {
 
 	// // Feedback data for styling consistency???
 	const handlePrintReport = useReactToPrint({
+		contentRef: printRef,
 		content: () => printRef.current,
 		// Optional: add/override print styles
 		pageStyle: `
-		@page { margin: 12mm; }
+		@page { margin: 6mm; }
 		@media print {
 			body { background: #fff; }
 			nav, .chat-panel, .pagination, .no-print { display: none !important; }
@@ -107,8 +114,7 @@ function SessionFeedbackDetails({ session }) {
 		const completed = session?.completedAt
 			? toLocale(session.completedAt)
 			: "—";
-		const presentationScore =
-			session?.feedback?.presentationScore ?? "—";
+		const presentationScore = session?.feedback?.presentationScore ?? "—";
 		return { created, completed, presentationScore };
 	}, [session]);
 
@@ -190,7 +196,7 @@ function SessionFeedbackDetails({ session }) {
 								feedbackData={feedbackData}
 								error={err}
 								onPrint={handlePrintReport}
-								ref={printRef}
+								printRef={printRef}
 							/>
 						</div>
 					</div>

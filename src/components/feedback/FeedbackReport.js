@@ -5,7 +5,6 @@ import SlideImage from "../feedback/SlideImage";
 import { ColumnHeader } from "../ui/Tables";
 import { IMAGE_BASE } from "../../constants";
 
-// Note: This is the new Feedback display component, where the session and feedback and slides are passed in as props.
 const statusIconMap = {
 	met: "✓",
 	not_met: "✗",
