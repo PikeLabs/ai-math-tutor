@@ -7,6 +7,7 @@ import { useSession } from "../hooks/useSession";
 
 // import { getTestFeedback } from "../services/api";
 
+// TODO: move to components/student/ since this is the student flow of feedback
 export default function FeedbackPage() {
 	const [feedbackData, setFeedbackData] = useState(null);
 	const [isLoading, setIsLoading] = useState(true);
@@ -63,12 +64,13 @@ export default function FeedbackPage() {
 	}, []);
 
 	useEffect(() => {
-		const prevUploadId = localStorage.getItem("currentPDFUploadId");
-		if (!sessionId || !prevUploadId) return;
+		const uploadId = localStorage.getItem("currentPDFUploadId");
+		if (!sessionId || !uploadId) return;
 
 		(async () => {
 			try {
-				await deleteSessionPdf(sessionId, prevUploadId);
+				// TODO: Are there other items on local storage I should remove?
+				await deleteSessionPdf(sessionId, uploadId);
 				localStorage.removeItem("currentPDFUploadId");
 			} catch (err) {
 				console.warn("PDF cleanup failed (non-blocking)");

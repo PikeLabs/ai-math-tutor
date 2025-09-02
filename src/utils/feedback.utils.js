@@ -99,3 +99,11 @@ export function resolveUrl(pathOrUrl) {
 	const isAbs = /^https?:\/\//i.test(pathOrUrl);
 	return isAbs ? pathOrUrl : `${IMAGE_BASE}${pathOrUrl}`;
 }
+
+export function safeParse(json) {
+	try {
+		return JSON.parse(json);
+	} catch {
+		return null;
+	}
+}
