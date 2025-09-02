@@ -1,10 +1,7 @@
 import { useState } from "react";
 import SlideImage from "./SlideImage";
-import { IMAGE_BASE } from "../../constants";
+import { resolveUrl } from "../../utils";
 
-
-// TODO: I am currently downsizing all the Feedback displays into 2-3 components.
-// Currently, there are so many, it's hard to manage.
 const statusIconMap = {
 	met: "✓",
 	not_met: "✗",
@@ -41,7 +38,7 @@ function SlideRow({ slideData, onImageClick }) {
 	const [imageError, setImageError] = useState(false);
 
 	const handleImageClick = () => {
-		const fullImageUrl = `${IMAGE_BASE}${slideData.image_url_full}`;
+		const fullImageUrl = resolveUrl(slideData.image_url_full);
 		onImageClick(fullImageUrl, slideData.slide_number);
 	};
 
@@ -54,10 +51,9 @@ function SlideRow({ slideData, onImageClick }) {
 		setAudioError(true);
 	};
 
-	const thumbSrc = `${IMAGE_BASE}${slideData.image_url}`;
-	const fullSrc = `${IMAGE_BASE}${slideData.image_url_full}`;
+	const thumbSrc = resolveUrl(slideData.image_url);
 	const audioSrc = slideData?.audio_url
-		? `${IMAGE_BASE}${slideData.audio_url}`
+		? resolveUrl(slideData.audio_url)
 		: null;
 
 	const { feedback } = slideData;
