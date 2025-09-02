@@ -120,8 +120,6 @@ export default function Dashboard() {
 		return sorted.slice(start, start + pageSize);
 	}, [sorted, page, pageSize]);
 
-	// const isLoading = busy || pending;
-
 	return (
 		<div className="p-6">
 			<div className="flex items-center justify-between mb-2">

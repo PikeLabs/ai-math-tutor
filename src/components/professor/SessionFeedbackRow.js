@@ -14,8 +14,18 @@ function DropDownContainer({
 	error,
 	onPrint,
 	printRef,
+	isLoading,
 }) {
 	if (!toggleOpen) return null;
+
+	if (isLoading) {
+		return (
+			<div className="flex items-center justify-center py-6 text-gray-500 text-sm">
+				<div className="animate-spin h-5 w-5 border-2 border-gray-300 border-t-blue-500 rounded-full mr-2"></div>
+				Loading feedback details...
+			</div>
+		);
+	}
 
 	if (error) {
 		return (
@@ -78,6 +88,7 @@ function SessionFeedbackDetails({ session }) {
 	const [sessionDetails, setSessionDetails] = useState();
 	const [animReady, setAnimReady] = useState(false);
 
+	// TODO: RM console.logs
 	console.log("SessionFeedbackRow session:", session);
 	console.log("SessionFeedbackRow sessionDetails:", sessionDetails);
 
@@ -128,7 +139,7 @@ function SessionFeedbackDetails({ session }) {
 	useEffect(() => {
 		let alive = true;
 		if (!toggleOpen || !!sessionDetails?.feedback) return;
-
+		setIsLoading(true);
 		(async () => {
 			setErr("");
 			try {
@@ -136,6 +147,8 @@ function SessionFeedbackDetails({ session }) {
 				if (alive) setSessionDetails(data);
 			} catch (e) {
 				if (alive) setErr(e?.message || "Failed to load feedback");
+			} finally {
+				if (alive) setIsLoading(false);
 			}
 		})();
 
@@ -197,6 +210,7 @@ function SessionFeedbackDetails({ session }) {
 								error={err}
 								onPrint={handlePrintReport}
 								printRef={printRef}
+								isLoading={isLoading}
 							/>
 						</div>
 					</div>
