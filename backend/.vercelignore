@@ -1,6 +1,19 @@
 # --- VCS & editor cruft ---
+.env
+.env.*
 .vscode
-.DS_Store
+**/.DS_Store
+
+# --- Python bytecode / caches ---
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.venv/
+venv/
 
 # exclude dev/test artifacts & big local dirs
 server_debug.log

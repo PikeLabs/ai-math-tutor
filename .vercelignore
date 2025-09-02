@@ -1,3 +1,10 @@
+# --- VCS & editor cruft ---
+.env
+.env.*
+.vscode
+**/.DS_Store
+
+
 # keep frontend bundle small
 backend/
 Dockerfile*
@@ -8,5 +15,3 @@ docker-compose.yml
 **/slide_images/
 **/assignments/
 **/audio_sessions/
-
-.vscode
