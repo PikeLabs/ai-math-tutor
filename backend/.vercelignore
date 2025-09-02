@@ -1,0 +1,16 @@
+# --- VCS & editor cruft ---
+.vscode
+.DS_Store
+
+# exclude dev/test artifacts & big local dirs
+server_debug.log
+storage/
+scripts/test_out/
+**/__pycache__/
+*.pyc
+*.log
+
+# --- Runtime/output dirs you mount at runtime ---
+**/slide_images/
+**/assignments/
+**/audio_sessions/
