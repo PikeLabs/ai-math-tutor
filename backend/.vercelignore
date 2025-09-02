@@ -27,3 +27,9 @@ scripts/test_out/
 **/slide_images/
 **/assignments/
 **/audio_sessions/
+
+!prisma/
+!prisma/schema.prisma
+!prisma/migrations/
+!prisma/migrations/**/migration.sql
+!prisma/migrations/migration_lock.toml
