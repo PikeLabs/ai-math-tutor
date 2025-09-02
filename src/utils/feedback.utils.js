@@ -1,3 +1,5 @@
+import { IMAGE_BASE } from "../constants";
+
 export function convertDbFeedbackToDisplay(feedback) {
 	if (!feedback) return null;
 
@@ -89,4 +91,11 @@ export function convertDbFeedbackToDisplay(feedback) {
 		metadata: { slide_count: 0, has_audio: false, has_conversation: false },
 		legacy_text,
 	};
+}
+
+// helper to resolve absolute or relative URL
+export function resolveUrl(pathOrUrl) {
+	if (!pathOrUrl) return null;
+	const isAbs = /^https?:\/\//i.test(pathOrUrl);
+	return isAbs ? pathOrUrl : `${IMAGE_BASE}${pathOrUrl}`;
 }
