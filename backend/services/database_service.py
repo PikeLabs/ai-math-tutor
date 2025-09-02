@@ -27,6 +27,10 @@ def create_session(
     )
 
 
+def update_session(session_id: str, data: Dict[str, Any]):
+    return db.session.update(where={"id": session_id}, data=data)
+
+
 def get_session_by_id(session_id: str):
     return db.session.find_unique(
         where={"id": session_id},
@@ -38,10 +42,6 @@ def get_session_by_id(session_id: str):
             },
         },
     )
-
-
-def update_session(session_id: str, data: Dict[str, Any]):
-    return db.session.update(where={"id": session_id}, data=data)
 
 
 # fetch all student sessions with feedback

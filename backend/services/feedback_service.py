@@ -1,4 +1,5 @@
 import os
+from re import S
 import tempfile
 import json
 import time
@@ -8,6 +9,13 @@ from flask import url_for
 from openai import OpenAI
 from dotenv import load_dotenv
 
+from lib.aws import (
+    upload_file,
+    build_key,
+    public_url,
+    S3_AUDIO_SESSIONS_FOLDER,
+    S3_SLIDE_IMAGES_FOLDER,
+)
 from config.paths import AUDIO_SESSIONS_DIR, BACKEND_DOTENV
 
 # Try to import pydub, fallback if not available
@@ -134,7 +142,7 @@ def transcribe_recording(audio_file_path):
 
 def save_audio_segments(session_id, audio_segments):
     """
-    Save audio segments to session directory
+    Save audio segments to session directory and upload to S3 bucket.
 
     Args:
         session_id: Unique session identifier
@@ -145,7 +153,7 @@ def save_audio_segments(session_id, audio_segments):
     """
     try:
         _ensure_audio_directories()
-        # Get absolute path to the backend directory
+
         session_dir = os.path.join(AUDIO_SESSIONS_DIR, session_id)
         os.makedirs(session_dir, exist_ok=True)
 
@@ -156,11 +164,41 @@ def save_audio_segments(session_id, audio_segments):
             temp_audio_path = segment["audio_path"]
 
             # Copy to session directory with permanent name
+            session_dir = os.path.join(AUDIO_SESSIONS_DIR, session_id)
+            os.makedirs(session_dir, exist_ok=True)
             permanent_path = os.path.join(session_dir, f"slide_{slide_number}.wav")
             shutil.copy2(temp_audio_path, permanent_path)
 
-            saved_segments[slide_number] = permanent_path
-            print(f"💾 Saved audio segment for slide {slide_number}")
+            s3_url = None
+            try:
+                s3_key = build_key(
+                    session_id,
+                    f"slide_{slide_number}.wav",
+                    subdir=S3_AUDIO_SESSIONS_FOLDER,
+                )
+
+                upload_file(permanent_path, s3_key, content_type="audio/wav")
+                s3_url = public_url(s3_key)
+            except Exception as e:
+                print(f"⚠️ Failed to upload audio segment for slide {slide_number}: {e}")
+                # TODO: Reset s3_url to none here?
+                # s3_url = None
+
+            # Remove local copy
+            try:
+                if os.path.exists(permanent_path):
+                    os.remove(permanent_path)
+            except Exception as e:
+                print(f"⚠️ Failed to delete local audio segment {permanent_path}: {e}")
+
+            saved_segments[slide_number] = {
+                "local_path": permanent_path,
+                "s3_url": s3_url,
+            }
+
+            print(
+                f"💾 Uploaded audio segment for slide {slide_number} → {bool(s3_url)}"
+            )
 
         # Save session metadata
         metadata = {
@@ -525,15 +563,19 @@ def generate_feedback(
                 print(f"🎤 Processing {len(qa_timestamps)} QA timestamp windows")
                 if AUDIO_PROCESSING_AVAILABLE and AudioSegment is not None:
                     qa_src = AudioSegment.from_file(full_audio_temp_path)
+
                     for idx, rng in enumerate(qa_timestamps):
                         # Expect {start: seconds, end: seconds}
                         start_s = float(rng.get("start", 0) or 0)
                         end_s = float(rng.get("end", 0) or 0)
+
                         if end_s <= start_s:
                             continue
+
                         start_ms = max(0, int(start_s * 1000))
                         end_ms = min(len(qa_src), int(end_s * 1000))
                         clip = qa_src[start_ms:end_ms]
+
                         with tempfile.NamedTemporaryFile(
                             delete=False, suffix=f".qa{idx}.wav"
                         ) as tmp:
@@ -544,6 +586,7 @@ def generate_feedback(
                             except Exception as te:
                                 print(f"⚠️ QA seg {idx} transcription failed: {te}")
                                 tx = ""
+
                         qa_audio_transcripts.append(
                             {
                                 "start_time": start_s,
@@ -838,24 +881,16 @@ def generate_feedback(
             # Parse the feedback text to extract individual scores
             parsed_feedback = parse_slide_feedback(feedback_text)
 
-            # Check if audio exists for this slide
-            has_audio = slide_num in audio_session_data
             # audio_url = (
-            #     f"/api/audio-segment/{feedback_session_id}/{slide_num}"
+            #     url_for(
+            #         "media.get_audio_segment",
+            #         session_id=feedback_session_id,
+            #         slide_number=slide_num,
+            #         _external=False,
+            #     )
             #     if has_audio
             #     else None
             # )
-
-            audio_url = (
-                url_for(
-                    "media.get_audio_segment",
-                    session_id=feedback_session_id,
-                    slide_number=slide_num,
-                    _external=False,
-                )
-                if has_audio
-                else None
-            )
 
             image_url = url_for(
                 "media.get_slide_image",
@@ -873,11 +908,54 @@ def generate_feedback(
                 _external=False,
             )
 
+            # TODO: Remove print statements
             print(f"📊 Building slide {slide_num} data:")
-            print(f"  - Has audio: {has_audio}")
             print(
                 f"  - Audio saved at: {audio_session_data.get(slide_num, 'Not saved')}"
             )
+
+            # --- Prefer S3 URLs, fallback to local endpoints ---
+            # Audio URL
+            # Check if audio exists for this slide
+            has_audio = slide_num in audio_session_data
+            audio_url = None
+
+            if has_audio:
+                seg_info = audio_session_data.get(slide_num)
+                audio_url = (
+                    seg_info.get("s3_url") if isinstance(seg_info, dict) else None
+                )
+
+            # if s3_audio_url:
+            #     audio_url = s3_audio_url
+            # else:
+            #     audio_url = url_for(
+            #         "media.get_audio_segment",
+            #         session_id=feedback_session_id,
+            #         slide_number=slide_num,
+            #         _external=False,
+            #     )
+
+            # IMAGE URLs (deterministic S3 keys using upload_id/pdf_session_id)
+            s3_thumb_key = build_key(
+                image_session_id,
+                f"slide_{slide_num}_thumb.png",
+                subdir=S3_SLIDE_IMAGES_FOLDER,
+            )
+            s3_full_key = build_key(
+                image_session_id,
+                f"slide_{slide_num}_full.png",
+                subdir=S3_SLIDE_IMAGES_FOLDER,
+            )
+
+            s3_thumb_url = public_url(s3_thumb_key)
+            s3_full_url = public_url(s3_full_key)
+
+            # Always prefer S3 (files were uploaded in /upload-slides)
+            image_url = s3_thumb_url
+            image_url_full = s3_full_url
+
+            print(f"  - Has audio: {has_audio}")
             print(f"  - Audio URL: {audio_url}")
             print(
                 f"  - Image URL: /api/slide-image/{image_session_id}/{slide_num}?type=thumbnail"

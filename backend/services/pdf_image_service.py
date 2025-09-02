@@ -1,7 +1,8 @@
 import os
+import glob
 import io
 import subprocess
-from config.paths import SLIDE_IMAGES_DIR
+from config.paths import SLIDE_IMAGES_DIR, ASSIGNMENTS_DIR
 
 
 # Check if PDF processing is available
@@ -211,7 +212,8 @@ def get_slide_image_path(upload_id, slide_number, image_type="thumbnail"):
     return None
 
 
-def cleanup_session_images(upload_id):
+# TODO: Rename to cleanup_session_slide_images
+def cleanup_session_slide_images(upload_id):
     """Remove all images for a specific upload/session id."""
     try:
         slide_dir = os.path.join(SLIDE_IMAGES_DIR, upload_id)
@@ -243,7 +245,20 @@ def cleanup_old_sessions(max_age_hours=24):
                 # Check creation time
                 creation_time = os.path.getctime(slides_path)
                 if creation_time < cutoff_time:
-                    cleanup_session_images(slides_dir)
+                    cleanup_session_slide_images(slides_dir)
 
     except Exception as e:
         print(f"⚠️ Error during cleanup: {e}")
+
+
+def cleanup_local_pdf_images(upload_id: str):
+    """
+    Our saved PDF name pattern: uploaded_{upload_id}_{originalName}.pdf
+    We remove any that match this processing id.
+    """
+    pattern = os.path.join(ASSIGNMENTS_DIR, f"uploaded_{upload_id}_*.pdf")
+    for path in glob.glob(pattern):
+        try:
+            os.remove(path)
+        except Exception as e:
+            print(f"⚠️ Failed to remove local PDF {path}: {e}")

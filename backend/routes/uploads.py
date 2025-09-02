@@ -3,11 +3,12 @@ from flask import Blueprint, request, jsonify
 from services.pdf_image_service import (
     save_slide_images,
     cleanup_old_sessions,
-    cleanup_session_images,
+    cleanup_session_slide_images,
     PDF_PROCESSING_AVAILABLE,
 )
 from utils.http import bad_request
 from config.paths import ASSIGNMENTS_DIR
+from services.pdf_image_service import cleanup_local_pdf_images
 from services.feedback_service import cleanup_old_audio_sessions
 from services.database_service import update_session, get_session_by_id
 from lib.aws import (
@@ -16,6 +17,7 @@ from lib.aws import (
     public_url,
     delete_file,
     parse_s3_key_from_url,
+    S3_SLIDE_IMAGES_FOLDER,
 )
 
 bp = Blueprint("uploads", __name__)
@@ -23,19 +25,6 @@ bp = Blueprint("uploads", __name__)
 
 def _ensure_assignments_dir():
     os.makedirs(ASSIGNMENTS_DIR, exist_ok=True)
-
-
-def _delete_local_pdf_for_processing_session(upload_id: str):
-    """
-    Our saved PDF name pattern: uploaded_{upload_id}_{originalName}.pdf
-    We remove any that match this processing id.
-    """
-    pattern = os.path.join(ASSIGNMENTS_DIR, f"uploaded_{upload_id}_*.pdf")
-    for path in glob.glob(pattern):
-        try:
-            os.remove(path)
-        except Exception as e:
-            print(f"⚠️ Failed to remove local PDF {path}: {e}")
 
 
 @bp.post("/upload-slides")
@@ -87,25 +76,55 @@ def api_upload_slides():
 
         slide_count = len(slide_paths) if slide_paths else actual_page_count
 
-        # Try S3 upload (optional)
+        # Upload derived slide images to S3 (thumbnail + full). Do NOT upload the original PDF.
         s3_url = None
         try:
             # build an S3 key under a stable prefix per processing session
-            s3_key = build_key(upload_id, safe_filename)
-            upload_file(local_pdf_path, s3_key, content_type="application/pdf")
-            s3_url = public_url(s3_key)
+            # s3_key = build_key(upload_id, safe_filename)
+            # upload_file(local_pdf_path, s3_key, content_type="application/pdf")
+            # s3_url = public_url(s3_key)
+
+            # slide_paths format: { <slide_number>: {"full": "/path", "thumbnail": "/path"} }
+            for slide_number, paths in (slide_paths or {}).items():
+                full_path = paths.get("full")
+                thumb_path = paths.get("thumbnail")
+
+                if full_path and os.path.exists(full_path):
+                    full_key = build_key(
+                        upload_id,
+                        f"slide_{slide_number}_full.png",
+                        subdir=S3_SLIDE_IMAGES_FOLDER,
+                    )
+                    upload_file(full_path, full_key, content_type="image/png")
+
+                if thumb_path and os.path.exists(thumb_path):
+                    thumb_key = build_key(
+                        upload_id,
+                        f"slide_{slide_number}_thumb.png",
+                        subdir=S3_SLIDE_IMAGES_FOLDER,
+                    )
+                    upload_file(thumb_path, thumb_key, content_type="image/png")
+
         except Exception as e:
             # Non-fatal; we still have a local file for the live session
             print(f"⚠️ S3 upload failed: {e}")
-            return jsonify({"error": "S3 upload failed"}), 500
+            # TODO: Do we need this return
+            return bad_request("S3 upload failed")
+
+        # After a successful upload attempt (even if some images failed), remove local copies
+        # TODO: If they failed to upload, why would we clean up the local images?
+        try:
+            cleanup_session_slide_images(upload_id)
+        except Exception as e:
+            print(f"⚠️ Failed to cleanup local slide images for {upload_id}: {e}")
 
         # If the FE passed a DB sessionId, update that record with pdfUrl/slideCount
         if session_id:
             try:
                 # cleanup *previous* local artifacts if caller provided the old processing id
                 if previous_upload_id:
-                    cleanup_session_images(previous_upload_id)
-                    _delete_local_pdf_for_processing_session(previous_upload_id)
+                    cleanup_session_slide_images(previous_upload_id)
+                    cleanup_local_pdf_images(previous_upload_id)
 
                 # if Session already had an S3 url, remove the old object
                 try:
@@ -115,15 +134,24 @@ def api_upload_slides():
                     print(f"⚠️ get_session failed for {session_id}: {e}")
 
                 if existing and getattr(existing, "pdfUrl", None):
+                    prev_pdf = existing.pdfUrl or ""
                     old_key = parse_s3_key_from_url(existing.pdfUrl)
+
                     if old_key:
                         try:
                             delete_file(old_key)
                         except Exception as e:
                             print(f"⚠️ Failed to delete old S3 object {old_key}: {e}")
+                    else:
+                        try:
+                            if os.path.exists(prev_pdf):
+                                os.remove(prev_pdf)
+                        except Exception as e:
+                            print(f"⚠️ Failed to delete old local PDF {prev_pdf}: {e}"))
 
-                # Update the Session row:
-                pdf_url_to_store = s3_url
+                # Update the Session row with the LOCAL path to the PDF
+                pdf_url_to_store = local_pdf_path # ← store local path so future uploads can remove it
+    
                 update_session(
                     session_id,
                     {
@@ -179,8 +207,8 @@ def delete_session_pdf(session_id: str):
 
         # Cleanup local images & the local file
         if prev_processing_id:
-            cleanup_session_images(prev_processing_id)
-            _delete_local_pdf_for_processing_session(prev_processing_id)
+            cleanup_session_slide_images(prev_processing_id)
+            cleanup_local_pdf_images(prev_processing_id)
 
         # Remove previous S3 object if present
         try:
@@ -189,12 +217,20 @@ def delete_session_pdf(session_id: str):
             existing = None
 
         if existing and getattr(existing, "pdfUrl", None):
-            old_key = parse_s3_key_from_url(existing.pdfUrl)
+            prev_pdf = existing.pdfUrl or ""
+            old_key = parse_s3_key_from_url(prev_pdf)
+
             if old_key:
                 try:
                     delete_file(old_key)
                 except Exception as e:
                     print(f"⚠️ Failed to delete S3 object {old_key}: {e}")
+            else:
+                try:
+                    if os.path.exists(prev_pdf):
+                        os.remove(prev_pdf)
+                except Exception as e:
+                    print(f"⚠️ Failed to delete local PDF {prev_pdf}: {e}")
 
         # Null out the DB fields
         try:
