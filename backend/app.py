@@ -4,11 +4,11 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 
 from config.prisma import connect_db, disconnect_db
+
+from config.paths import BACKEND_DOTENV
 from routes.health import bp as health_bp
 from routes.sessions import bp as sessions_bp
 from routes.conversations import bp as conversations_bp
-
-# from routes.professor import bp as professor_bp
 from routes.auth import auth_bp
 from routes.feedback import bp as feedback_api_bp
 from routes.chat import bp as chat_bp
@@ -17,14 +17,18 @@ from routes.media import bp as media_bp
 from routes.uploads import bp as uploads_bp
 
 
-# This tells the program to look for the .env file in the same folder as this file.
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+# Load only backend/.env (local dev); do nothing if missing (prod)
+load_dotenv(BACKEND_DOTENV, override=False)
 
 API_PREFIX = "/api/v1"
 
 
 def create_app():
     app = Flask(__name__)
+
+    storage_root = os.environ.get("STORAGE_ROOT")
+    if storage_root:
+        os.environ.setdefault("TMPDIR", storage_root)
 
     # session config
     cookie_samesite = os.environ.get("COOKIE_SAMESITE", "Lax")

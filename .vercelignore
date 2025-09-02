@@ -1,0 +1,17 @@
+# --- VCS & editor cruft ---
+.env
+.env.*
+.vscode
+**/.DS_Store
+
+
+# keep frontend bundle small
+backend/
+Dockerfile*
+docker-compose.yml
+*.log
+
+# Runtime/output dirs you mount at runtime
+**/slide_images/
+**/assignments/
+**/audio_sessions/

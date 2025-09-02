@@ -1,11 +1,8 @@
 import os
-import tempfile
 from openai import OpenAI
-from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-AI_API_KEY = os.getenv('OPENAI_API_KEY')
+AI_API_KEY = os.getenv("OPENAI_API_KEY")
 CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-5")  # overridable via env
 MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "15000"))  # hard guard
 MAX_TRANSCRIPT_CHARS = int(
@@ -71,17 +68,16 @@ def transcribe_audio(audio_file):
     Returns a plain string.
     """
     try:
-        with open(audio_file, 'rb') as f:
+        with open(audio_file, "rb") as f:
             transcript = client.audio.transcriptions.create(
-                model=TRANSCRIBE_MODEL,
-                file=f,
-                response_format="text"
+                model=TRANSCRIBE_MODEL, file=f, response_format="text"
             )
 
         # Some SDK versions return a string; others a wrapper. Normalize.
         return transcript if isinstance(transcript, str) else str(transcript)
     except Exception as e:
         raise Exception(f"Audio transcription error: {str(e)}")
+
 
 # TODO: Should we split audio vs PDF?
 def chat_with_ai(messages, pdf_context=None, audio_transcription=None):
@@ -117,7 +113,9 @@ def chat_with_ai(messages, pdf_context=None, audio_transcription=None):
         if transcription_trimmed:
             audio_transcription_length = len(audio_transcription)
             trimmed_transcription_length = len(transcription_trimmed)
-            print(f"📝 Transcription length trimmed from {audio_transcription_length} to {trimmed_transcription_length} characters")
+            print(
+                f"📝 Transcription length trimmed from {audio_transcription_length} to {trimmed_transcription_length} characters"
+            )
             print(f"📝 Transcription preview: {transcription_trimmed[:100]}...")
 
         # ---- Build system message ----
@@ -135,7 +133,7 @@ def chat_with_ai(messages, pdf_context=None, audio_transcription=None):
         if transcription_trimmed:
             system_content += (
                 "\n\nPRESENTATION WALKTHROUGH: Here's what the founder said while walking through their presentation:\n\n"
-                f"\"{transcription_trimmed}\"\n\n"
+                f'"{transcription_trimmed}"\n\n'
                 "Use this spoken walkthrough to understand how they presented their ideas, what they emphasized, and tailor your questions accordingly\n\n."
                 "Focus on areas where their explanation might need strengthening or where you detected uncertainty."
             )

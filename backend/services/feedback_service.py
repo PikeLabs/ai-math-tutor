@@ -6,9 +6,8 @@ import uuid
 import shutil
 from flask import url_for
 from openai import OpenAI
-from dotenv import load_dotenv
 
-from config.paths import AUDIO_SESSIONS_DIR, BACKEND_DOTENV
+from config.paths import AUDIO_SESSIONS_DIR
 
 # Try to import pydub, fallback if not available
 try:
@@ -21,8 +20,6 @@ except ImportError as e:
     AudioSegment = None
     AUDIO_PROCESSING_AVAILABLE = False
 
-# load only backend .env (no crawling)
-load_dotenv(BACKEND_DOTENV)
 
 AI_API_KEY = os.getenv("OPENAI_API_KEY")
 TRANSCRIBE_MODEL = os.getenv("OPENAI_TRANSCRIBE_MODEL", "whisper-1")

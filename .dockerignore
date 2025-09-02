@@ -2,7 +2,7 @@
 .git
 .gitignore
 .vscode
-.DS_Store
+**/.DS_Store
 
 # Env & compose
 .env
