@@ -1,53 +1,91 @@
-import React, { useState } from "react";
-import { useSession } from "../contexts/SessionContext";
-import { createSession } from "../services/api";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+
+import BackButton from "./ui/BackButton";
+import { useSession } from "../hooks/useSession";
+import { createSession } from "../services/api";
 
 export default function StudentNameInput() {
 	const [name, setName] = useState("");
-	const [busy, setBusy] = useState(false);
+	const [err, setErr] = useState("");
+	const [submitting, setSubmitting] = useState(false);
+
 	const { setSessionId, setStudentId, setStudentName } = useSession();
 	const navigate = useNavigate();
 
-	async function onSubmit(e) {
+	const onSubmit = async (e) => {
 		e.preventDefault();
-		if (name.trim().length < 2) return;
+		if (name.trim().length < 2) {
+			setErr("Name must be at least 2 characters long");
+			return;
+		}
+
+		setErr("");
+		setSubmitting(true);
+
 		try {
-			setBusy(true);
 			const res = await createSession({ studentName: name.trim() });
+
 			setStudentName(name.trim());
 			setSessionId(res.sessionId);
 			setStudentId(res.studentId);
-			navigate("/student"); // or /student/slides if you have that route
-		} catch (err) {
-            console.error("Failed to create session:", err);
-            alert("Failed to create session. Please try again.");
-        } finally {
-			setBusy(false);
-		}
-	}
 
-    return (
-			<div className="min-h-screen grid place-items-center p-6">
-				<form
-					onSubmit={onSubmit}
-					className="w-full max-w-md space-y-3 border rounded p-6"
-				>
-					<h1 className="text-xl font-semibold">Welcome 👋</h1>
-					<label className="block text-sm font-medium">Your name</label>
+			navigate("/student");
+		} catch (err) {
+			setErr(
+				err.message ||
+					"Failed to create a new student session, please try again"
+			);
+			console.error("Failed to create session:", err);
+		} finally {
+			setSubmitting(false);
+		}
+	};
+
+	const errorContent = err && (
+		<div className="text-red-600 text-md font-medium text-center">{err}</div>
+	);
+
+	const handleNameInput = (e) => {
+		setName(e.target.value);
+	};
+
+	const handleBack = () => navigate("/");
+
+	const disabled = submitting || name.trim().length < 2;
+	const buttonText = submitting ? "Creating…" : "Continue";
+
+	return (
+		<div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+			<form
+				onSubmit={onSubmit}
+				className="w-full max-w-sm bg-white rounded-2xl shadow p-6 space-y-4"
+			>
+				<BackButton onClick={handleBack} />
+
+				<h1 className="text-xl font-semibold text-center">Welcome 👋</h1>
+
+				<label className="block text-sm">
+					<span className="text-gray-700">Your name</span>
 					<input
-						className="w-full border rounded px-3 py-2"
+						className="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:border-blue-500"
 						value={name}
-						onChange={(e) => setName(e.target.value)}
+						onChange={handleNameInput}
 						placeholder="Ada Lovelace"
+						autoFocus
+						aria-label="Student name"
 					/>
-					<button
-						disabled={busy || name.trim().length < 2}
-						className="px-4 py-2 rounded bg-blue-600 text-white disabled:bg-gray-400"
-					>
-						{busy ? "Creating…" : "Continue"}
-					</button>
-				</form>
-			</div>
-		);
+				</label>
+
+				{errorContent}
+
+				<button
+					disabled={disabled}
+					className="w-full py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+				>
+					{buttonText}
+				</button>
+			</form>
+		</div>
+	);
 }
