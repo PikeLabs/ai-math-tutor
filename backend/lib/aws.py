@@ -10,9 +10,12 @@ S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 S3_PREFIX = os.getenv("S3_PREFIX", "").strip("/")
 AWS_REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
 
+# S3 Folder Names
+S3_SLIDE_IMAGES_FOLDER = os.getenv("S3_SLIDE_IMAGES_FOLDER")
+S3_AUDIO_SESSIONS_FOLDER = os.getenv("S3_AUDIO_SESSIONS_FOLDER")
+
 
 # ---- Client --------------------------------------------------------------
-
 
 @lru_cache(maxsize=1)
 def s3_client():
@@ -36,13 +39,15 @@ def _sanitize_id(s: str) -> str:
     return _SAFE_CHARS.sub("_", s or "")
 
 
-def build_key(session_id: str, filename: str) -> str:
+def build_key(session_id: str, filename: str, subdir: str | None = None) -> str:
     """
-    Key format: <S3_PREFIX?>/<session_id>/<filename>
+    Key format:  Key format: <S3_PREFIX?>/<subdir?>/<session_id>/<filename>
+    - subdir is optional (e.g., "slide_images" or "audio_sessions")
     """
     sid = _sanitize_id(session_id)
     fname = _sanitize_filename(filename)
-    parts = [p for p in (S3_PREFIX, sid, fname) if p]
+    sub = _sanitize_id(subdir) if subdir else None
+    parts = [p for p in (S3_PREFIX, sub, sid, fname) if p]
     return "/".join(parts)
 
 
