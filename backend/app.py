@@ -19,7 +19,7 @@ from routes.uploads import bp as uploads_bp
 # Load only backend/.env (local dev); do nothing if missing (prod)
 load_dotenv(BACKEND_DOTENV, override=False)
 
-API_PREFIX = os.getenv("API_PREFIX", "/api/v1")
+API_PREFIX = "/api/v1"
 
 
 def create_app():
@@ -59,9 +59,9 @@ def create_app():
         vary_header=True,
     )
 
-    @app.before_request
-    def _dbg_log_path():
-        print("REQUEST PATH:", request.path)
+    # @app.before_request
+    # def _dbg_log_path():
+    #     print("REQUEST PATH:", request.path)
 
     @app.before_request
     def _connect():
