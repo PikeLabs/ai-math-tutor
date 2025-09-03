@@ -10,3 +10,4 @@ PyPDF2
 gunicorn
 bcrypt
 boto3
+nodejs-bin==20.14.0
