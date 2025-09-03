@@ -3,6 +3,7 @@ from flask import Flask, request
 from dotenv import load_dotenv
 
 from config.prisma import connect_db, disconnect_db
+from config.cors import configure_cors
 
 from config.paths import BACKEND_DOTENV
 from routes.health import bp as health_bp
@@ -29,39 +30,7 @@ def create_app():
     if storage_root:
         os.environ.setdefault("TMPDIR", storage_root)
 
-    from flask_cors import CORS
-
-    # session config
-    cookie_samesite = os.environ.get("COOKIE_SAMESITE", "Lax")
-    cookie_secure = os.environ.get("COOKIE_SECURE", "false").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
-    app.config["SESSION_COOKIE_HTTPONLY"] = True
-    app.config["SESSION_COOKIE_SAMESITE"] = cookie_samesite
-    app.config["SESSION_COOKIE_SECURE"] = cookie_secure
-
-    FE_ORIGIN = os.environ.get("FE_ORIGIN", "http://localhost:3000")
-    FE_ORIGIN_EXTRA = os.environ.get("FE_ORIGINS_EXTRA", "")
-
-    raw_extras = (
-        [o.strip() for o in FE_ORIGIN_EXTRA.split(",")] if FE_ORIGIN_EXTRA else []
-    )
-    origins = [FE_ORIGIN.strip(), *[o for o in raw_extras if o]]
-    CORS(
-        app,
-        resources={r"/*": {"origins": origins}},  # <= widen so OPTIONS always matches
-        supports_credentials=True,
-        allow_headers=["Content-Type", "Authorization"],
-        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        vary_header=True,
-    )
-
-    # @app.before_request
-    # def _dbg_log_path():
-    #     print("REQUEST PATH:", request.path)
+    configure_cors(app)
 
     @app.before_request
     def _connect():
@@ -85,7 +54,6 @@ def create_app():
     app.register_blueprint(health_bp, url_prefix=API_PREFIX)
     app.register_blueprint(sessions_bp, url_prefix=API_PREFIX)
     app.register_blueprint(conversations_bp, url_prefix=API_PREFIX)
-    # app.register_blueprint(professor_bp, url_prefix=API_PREFIX)
     app.register_blueprint(feedback_api_bp, url_prefix=API_PREFIX)
     app.register_blueprint(chat_bp, url_prefix=API_PREFIX)
     app.register_blueprint(assignments_bp, url_prefix=API_PREFIX)
