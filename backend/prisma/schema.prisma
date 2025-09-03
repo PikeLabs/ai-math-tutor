@@ -2,6 +2,7 @@ generator client {
   provider = "prisma-client-py"
   interface = "sync"
   recursive_type_depth = -1
+  output   = "./generated"
 }
 
 datasource db {
