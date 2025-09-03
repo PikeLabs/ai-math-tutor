@@ -2,11 +2,7 @@
 	"functions": {
 		"api/**/*.py": {
 			"runtime": "python3.11",
-			"includeFiles": [
-				"prisma/schema.prisma",
-				"prisma/migrations/**",
-				"prisma/seed.py"
-			]
+			"includeFiles": "prisma/**"
 		}
 	}
 }
