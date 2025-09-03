@@ -3,9 +3,9 @@
 	"functions": {
 		"api/**/*.py": {
 			"runtime": "python3.11",
-			"includeFiles": "prisma/**"
+			"includeFiles": ["prisma/**"]
 		}
 	},
-	"installCommand": "python -m pip install -r requirements.txt && python -m prisma generate --schema ./prisma/schema.prisma",
+	"installCommand": "pip install -r requirements.txt && python -m prisma generate --schema ./prisma/schema.prisma",
 	"buildCommand": "true"
 }
