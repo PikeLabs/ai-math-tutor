@@ -1,6 +1,7 @@
 {
 	"$schema": "https://openapi.vercel.sh/vercel.json",
 	"framework": null,
+    "outputDirectory": ".",
 	"functions": {
 		"api/**/*.py": {
 			"includeFiles": "prisma/**"
