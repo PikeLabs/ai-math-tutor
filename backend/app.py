@@ -19,7 +19,7 @@ from routes.uploads import bp as uploads_bp
 # Load only backend/.env (local dev); do nothing if missing (prod)
 load_dotenv(BACKEND_DOTENV, override=False)
 
-API_PREFIX = "/api/v1"
+API_PREFIX = os.getenv("API_PREFIX", "/api/v1")
 
 
 def create_app():
