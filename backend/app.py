@@ -1,5 +1,5 @@
 import os
-from flask import Flask
+from flask import Flask, request
 from dotenv import load_dotenv
 
 from config.prisma import connect_db, disconnect_db
@@ -61,11 +61,20 @@ def create_app():
 
     @app.before_request
     def _connect():
+        # Let CORS preflights and health checks run without DB
+        if request.method == "OPTIONS":
+            return
+        if request.path.startswith(f"{API_PREFIX}/health"):
+            return
+
         connect_db()
 
     @app.teardown_appcontext
     def _disconnect(exception=None):
-        disconnect_db()
+        try:
+            disconnect_db()
+        except Exception:
+            pass
 
     # Register blueprints (all are url_prefix="/api/v1")
     app.register_blueprint(auth_bp, url_prefix=API_PREFIX)
