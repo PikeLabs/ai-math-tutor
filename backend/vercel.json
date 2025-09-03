@@ -1,8 +1,9 @@
 {
+	"$schema": "https://openapi.vercel.sh/vercel.json",
 	"functions": {
 		"api/**/*.py": {
-			"runtime": "python3.11",
 			"includeFiles": "prisma/**"
 		}
-	}
+	},
+	"installCommand": "python -m pip install -r requirements.txt && python -m prisma generate"
 }
