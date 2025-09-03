@@ -5,6 +5,6 @@
 			"includeFiles": "prisma/**"
 		}
 	},
-	"installCommand": "python3 -m pip install -r requirements.txt && python3 -m prisma generate --schema ./prisma/schema.prisma",
+	"installCommand": "export PATH=\"/python312/bin:$PATH\" && PRISMA_PY_DEBUG=1 PRISMA_USE_NODEJS_BIN=1 python3 -m pip install -r requirements.txt && export PATH=\"/python312/bin:$PATH\" && python3 -m prisma generate --schema ./prisma/schema.prisma",
 	"buildCommand": "true"
 }
