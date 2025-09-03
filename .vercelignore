@@ -9,6 +9,7 @@
 backend/
 Dockerfile*
 docker-compose.yml
+.dockerignore
 *.log
 
 # Runtime/output dirs you mount at runtime

@@ -28,6 +28,11 @@ scripts/test_out/
 **/assignments/
 **/audio_sessions/
 
+# docker
+Dockerfile*
+.dockerignore
+
+
 !prisma/
 !prisma/schema.prisma
 !prisma/migrations/
