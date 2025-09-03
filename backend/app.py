@@ -60,6 +60,10 @@ def create_app():
     )
 
     @app.before_request
+    def _dbg_log_path():
+        print("REQUEST PATH:", request.path)
+
+    @app.before_request
     def _connect():
         # Let CORS preflights and health checks run without DB
         if request.method == "OPTIONS":
