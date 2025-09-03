@@ -1,0 +1,44 @@
+services:
+  backend:
+    # Build the production image instead of dev image
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    # Prod-like env (tweak as needed for local HTTPS/cookies)
+    environment:
+      - PRISMA_MIGRATE_MODE=deploy
+      - PRISMA_GENERATE_ON_BOOT=0
+      # FE points to your local FE unless you also run FE on Vercel
+      - FE_ORIGIN=http://localhost:3000
+      # For real prod set COOKIE_SECURE=true; locally with http keep it 0
+      - COOKIE_SAMESITE=None
+      - COOKIE_SECURE=0
+      # Use container FS for scratch; ephemeral but fine for local prod-like
+      - STORAGE_ROOT=/app/backend/storage
+      # If your DATABASE_URL isn't coming from env_file, uncomment this:
+      # - DATABASE_URL=postgresql://admin:admin123@db:5432/aimath
+    # Ensure we do NOT inherit any dev bind mounts from the base file
+    volumes: []
+    # Still expose the service so you can hit it from the host
+    ports:
+      - "5001:5001"
+    # Keep a healthcheck so frontend waits for backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5001/api/v1/health >/dev/null"]
+      interval: 90s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+  # If you also want the frontend in prod-like mode, either leave it as-is
+  # or add any prod-ish changes here (no bind mounts, etc.). Typically you
+  # still dev the FE, so leaving FE mounted is fine.
+  frontend:
+    # Keep the same port mapping; FE will call http://localhost:5001/api/v1
+    ports:
+      - "3000:3000"
+
+  # DB unchanged — we keep using the local Postgres service
+  db:
+    # no changes necessary here; uses whatever is set in the base file
+    # (You can also override env if you want a different DB name/user)
