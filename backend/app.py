@@ -1,6 +1,5 @@
 import os
 from flask import Flask
-from flask_cors import CORS
 from dotenv import load_dotenv
 
 from config.prisma import connect_db, disconnect_db
@@ -30,6 +29,8 @@ def create_app():
     if storage_root:
         os.environ.setdefault("TMPDIR", storage_root)
 
+    from flask_cors import CORS
+
     # session config
     cookie_samesite = os.environ.get("COOKIE_SAMESITE", "Lax")
     cookie_secure = os.environ.get("COOKIE_SECURE", "false").lower() in (
@@ -45,9 +46,18 @@ def create_app():
     FE_ORIGIN = os.environ.get("FE_ORIGIN", "http://localhost:3000")
     FE_ORIGIN_EXTRA = os.environ.get("FE_ORIGINS_EXTRA", "")
 
-    raw_extras = [o.strip() for o in FE_ORIGIN_EXTRA.split(",")] if FE_ORIGIN_EXTRA else []
+    raw_extras = (
+        [o.strip() for o in FE_ORIGIN_EXTRA.split(",")] if FE_ORIGIN_EXTRA else []
+    )
     origins = [FE_ORIGIN.strip(), *[o for o in raw_extras if o]]
-    CORS(app, resources={r"/api/*": {"origins": origins}}, supports_credentials=True)
+    CORS(
+        app,
+        resources={r"/*": {"origins": origins}},  # <= widen so OPTIONS always matches
+        supports_credentials=True,
+        allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        vary_header=True,
+    )
 
     @app.before_request
     def _connect():
