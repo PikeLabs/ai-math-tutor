@@ -13,7 +13,13 @@
 		"react-router-dom": "^6.30.1",
 		"react-scripts": "5.0.1",
 		"react-to-print": "^3.1.1",
-		"web-vitals": "^2.1.4",
+		"web-vitals": "^2.1.4"
+	},
+	"scripts": {
+		"start": "concurrently \"python3 backend/app.py\" \"react-scripts start\"",
+		"build": "react-scripts build",
+		"test": "react-scripts test",
+		"eject": "react-scripts eject",
 		"docker:up": "docker compose up -d",
 		"docker:down": "docker compose down",
 		"docker:build": "docker compose up --build",
@@ -21,12 +27,6 @@
 		"dx": "docker compose exec -it backend",
 		"docker:sh": "npm run dx -- bash",
 		"docker:seed": "npm run dx -- python prisma/seed.py"
-	},
-	"scripts": {
-		"start": "concurrently \"python3 backend/app.py\" \"react-scripts start\"",
-		"build": "react-scripts build",
-		"test": "react-scripts test",
-		"eject": "react-scripts eject"
 	},
 	"eslintConfig": {
 		"extends": [
