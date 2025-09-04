@@ -1,14 +1,14 @@
 import os
-from flask import Flask
-from flask_cors import CORS
+from flask import Flask, request
 from dotenv import load_dotenv
 
 from config.prisma import connect_db, disconnect_db
+from config.cors import configure_cors
+
+from config.paths import BACKEND_DOTENV
 from routes.health import bp as health_bp
 from routes.sessions import bp as sessions_bp
 from routes.conversations import bp as conversations_bp
-
-# from routes.professor import bp as professor_bp
 from routes.auth import auth_bp
 from routes.feedback import bp as feedback_api_bp
 from routes.chat import bp as chat_bp
@@ -17,8 +17,8 @@ from routes.media import bp as media_bp
 from routes.uploads import bp as uploads_bp
 
 
-# This tells the program to look for the .env file in the same folder as this file.
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+# Load only backend/.env (local dev); do nothing if missing (prod)
+load_dotenv(BACKEND_DOTENV, override=False)
 
 API_PREFIX = "/api/v1"
 
@@ -26,39 +26,34 @@ API_PREFIX = "/api/v1"
 def create_app():
     app = Flask(__name__)
 
-    # session config
-    cookie_samesite = os.environ.get("COOKIE_SAMESITE", "Lax")
-    cookie_secure = os.environ.get("COOKIE_SECURE", "false").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
-    app.config["SESSION_COOKIE_HTTPONLY"] = True
-    app.config["SESSION_COOKIE_SAMESITE"] = cookie_samesite
-    app.config["SESSION_COOKIE_SECURE"] = cookie_secure
+    storage_root = os.environ.get("STORAGE_ROOT")
+    if storage_root:
+        os.environ.setdefault("TMPDIR", storage_root)
 
-    FE_ORIGIN = os.environ.get("FE_ORIGIN", "http://localhost:3000")
-    FE_ORIGIN_EXTRA = os.environ.get("FE_ORIGINS_EXTRA", "")
-
-    raw_extras = [o.strip() for o in FE_ORIGIN_EXTRA.split(",")] if FE_ORIGIN_EXTRA else []
-    origins = [FE_ORIGIN.strip(), *[o for o in raw_extras if o]]
-    CORS(app, resources={r"/api/*": {"origins": origins}}, supports_credentials=True)
+    configure_cors(app)
 
     @app.before_request
     def _connect():
+        # Let CORS preflights and health checks run without DB
+        if request.method == "OPTIONS":
+            return
+        if request.path.startswith(f"{API_PREFIX}/health"):
+            return
+
         connect_db()
 
     @app.teardown_appcontext
     def _disconnect(exception=None):
-        disconnect_db()
+        try:
+            disconnect_db()
+        except Exception:
+            pass
 
     # Register blueprints (all are url_prefix="/api/v1")
     app.register_blueprint(auth_bp, url_prefix=API_PREFIX)
     app.register_blueprint(health_bp, url_prefix=API_PREFIX)
     app.register_blueprint(sessions_bp, url_prefix=API_PREFIX)
     app.register_blueprint(conversations_bp, url_prefix=API_PREFIX)
-    # app.register_blueprint(professor_bp, url_prefix=API_PREFIX)
     app.register_blueprint(feedback_api_bp, url_prefix=API_PREFIX)
     app.register_blueprint(chat_bp, url_prefix=API_PREFIX)
     app.register_blueprint(assignments_bp, url_prefix=API_PREFIX)

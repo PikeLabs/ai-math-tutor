@@ -11,7 +11,7 @@ export default function SlideImage({
 		<img
 			src={src}
 			alt={alt}
-			crossOrigin="anonymous" // <-- important for html2canvas
+			crossOrigin="anonymous"
 			className={className}
 			style={style}
 			onClick={onClick}

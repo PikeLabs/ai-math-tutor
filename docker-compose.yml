@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile.frontend
-    container_name: ai-math-frontend
+    container_name: professor-fe
     env_file:
       - .env
     environment:
@@ -26,14 +26,16 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: ai-math-backend
+    container_name: professor-be
     env_file: ./backend/.env
     environment:
       - PRISMA_MIGRATE_MODE=dev
       # Set PRISMA_FRESH="1" before you build to wipe the db
-      - PRISMA_FRESH="0"
+      - PRISMA_FRESH=0
+      - PRISMA_GENERATE_ON_BOOT=0 # set to "auto" to update schemas
       - FE_ORIGIN=http://localhost:3000
       - COOKIE_SECURE=0
+      - GUNICORN_RELOAD=1
     volumes:
       # optional: live-edit backend code
       - ./backend:/app/backend
@@ -52,7 +54,7 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: ai-math-db
+    container_name: professor-db
     env_file:
       - ./backend/.env
     environment:

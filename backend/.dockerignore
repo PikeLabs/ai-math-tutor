@@ -2,7 +2,7 @@
 .git
 .gitignore
 .vscode
-.DS_Store
+**/.DS_Store
 
 # --- Python bytecode / caches ---
 __pycache__/
