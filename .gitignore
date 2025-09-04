@@ -42,3 +42,5 @@ backend/scripts/test_out/
 
 copy_files.sh
 catch_ai_up.txt
+backend/scripts/manual_deploy.sh
+.github/workflows/deploy-backend.yml

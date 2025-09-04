@@ -1,6 +1,7 @@
 import os
 from flask import Flask
 
+
 def _normalize_samesite(v: str) -> str:
     v = (v or "").strip().lower()
     if v in ("none", "lax", "strict"):
