@@ -1,20 +1,16 @@
-import os
-from re import S
-import tempfile
-import json
-import time
-import uuid
-import shutil
-from flask import url_for
+import os, tempfile, json, time, uuid, shutil
 from openai import OpenAI
 
+from services.media_service import get_presigned_slide_urls
+from services.database_service import upsert_slide_asset
 from lib.aws import (
     upload_file,
     build_key,
-    public_url,
+    presigned_get_url,
+    build_s3_filename,
     S3_AUDIO_SESSIONS_FOLDER,
-    S3_SLIDE_IMAGES_FOLDER,
 )
+
 from config.paths import AUDIO_SESSIONS_DIR
 
 # Try to import pydub, fallback if not available
@@ -168,18 +164,32 @@ def save_audio_segments(session_id, audio_segments):
 
             s3_url = None
             try:
+                audio_filename = build_s3_filename(slide_number, "audio")
                 s3_key = build_key(
                     session_id,
-                    f"slide_{slide_number}.wav",
+                    audio_filename,
                     subdir=S3_AUDIO_SESSIONS_FOLDER,
                 )
 
                 upload_file(permanent_path, s3_key, content_type="audio/wav")
-                s3_url = public_url(s3_key)
+
+                # Short-lived, signed URL for playback
+                s3_url = presigned_get_url(
+                    s3_key,
+                    response_content_type="audio/wav",
+                )
+
+                upsert_slide_asset(
+                    session_id=session_id,
+                    slide_number=slide_number,
+                    kind="audio",
+                    s3_key=s3_key,
+                    mime_type="audio/wav",
+                    duration_ms=None,
+                )
+
             except Exception as e:
-                print(f"⚠️ Failed to upload audio segment for slide {slide_number}: {e}")
-                # TODO: Reset s3_url to none here?
-                # s3_url = None
+                print(f"⚠️ Failed to upload audio segment {permanent_path} to S3: {e}")
 
             # Remove local copy
             try:
@@ -784,9 +794,8 @@ def generate_feedback(
                 print(f"⚠️ No conversation history for Q&A feedback")
 
         # Use PDF session ID for images, generate new session ID for audio
-        # feedback_session_id = str(uuid.uuid4())
         feedback_session_id = asset_session_id or str(uuid.uuid4())
-        image_session_id = pdf_session_id or feedback_session_id
+        image_session_id = pdf_session_id or asset_session_id or feedback_session_id
 
         print(f"📊 Session IDs:")
         print(f"  - Feedback session (audio): {feedback_session_id}")
@@ -816,13 +825,6 @@ def generate_feedback(
             print(f"🔧 DEBUG: Transcript keys: {list(slide_audio_transcripts.keys())}")
         else:
             print("❌ No audio transcripts or segments available")
-
-        # Process slide images if we have assignment filename
-        slide_image_data = {}
-        if assignment_filename:
-            # For now, we'll handle this in the app.py when uploading
-            # The frontend will need to call /api/process-upload first
-            pass
 
         # Structure the response data
         structured_feedback = {
@@ -865,6 +867,7 @@ def generate_feedback(
         # Process individual slide feedback
         for i, feedback_text in enumerate(slide_feedback_texts):
             slide_num = i + 1
+
             if slide_timestamps_only and i < len(slide_timestamps_only):
                 slide_num = slide_timestamps_only[i]["slideNumber"]
 
@@ -877,33 +880,12 @@ def generate_feedback(
 
             # Parse the feedback text to extract individual scores
             parsed_feedback = parse_slide_feedback(feedback_text)
-
-            # audio_url = (
-            #     url_for(
-            #         "media.get_audio_segment",
-            #         session_id=feedback_session_id,
-            #         slide_number=slide_num,
-            #         _external=False,
-            #     )
-            #     if has_audio
-            #     else None
-            # )
-
-            image_url = url_for(
-                "media.get_slide_image",
-                upload_id=image_session_id,
-                slide_number=slide_num,
-                type="thumbnail",
-                _external=False,
-            )
-
-            image_url_full = url_for(
-                "media.get_slide_image",
-                upload_id=image_session_id,
-                slide_number=slide_num,
-                type="full",
-                _external=False,
-            )
+            urls = get_presigned_slide_urls(image_session_id, slide_num)
+            image_urls = get_presigned_slide_urls(image_session_id, slide_num)
+            audio_urls = get_presigned_slide_urls(feedback_session_id, slide_num)
+            image_url = image_urls["thumb"]
+            image_url_full = image_urls["full"]
+            audio_url = audio_urls["audio"]
 
             # TODO: Remove print statements
             print(f"📊 Building slide {slide_num} data:")
@@ -911,52 +893,6 @@ def generate_feedback(
                 f"  - Audio saved at: {audio_session_data.get(slide_num, 'Not saved')}"
             )
 
-            # --- Prefer S3 URLs, fallback to local endpoints ---
-            # Audio URL
-            # Check if audio exists for this slide
-            has_audio = slide_num in audio_session_data
-            audio_url = None
-
-            if has_audio:
-                seg_info = audio_session_data.get(slide_num)
-                audio_url = (
-                    seg_info.get("s3_url") if isinstance(seg_info, dict) else None
-                )
-
-            # if s3_audio_url:
-            #     audio_url = s3_audio_url
-            # else:
-            #     audio_url = url_for(
-            #         "media.get_audio_segment",
-            #         session_id=feedback_session_id,
-            #         slide_number=slide_num,
-            #         _external=False,
-            #     )
-
-            # IMAGE URLs (deterministic S3 keys using upload_id/pdf_session_id)
-            s3_thumb_key = build_key(
-                image_session_id,
-                f"slide_{slide_num}_thumb.png",
-                subdir=S3_SLIDE_IMAGES_FOLDER,
-            )
-            s3_full_key = build_key(
-                image_session_id,
-                f"slide_{slide_num}_full.png",
-                subdir=S3_SLIDE_IMAGES_FOLDER,
-            )
-
-            s3_thumb_url = public_url(s3_thumb_key)
-            s3_full_url = public_url(s3_full_key)
-
-            # Always prefer S3 (files were uploaded in /upload-slides)
-            image_url = s3_thumb_url
-            image_url_full = s3_full_url
-
-            print(f"  - Has audio: {has_audio}")
-            print(f"  - Audio URL: {audio_url}")
-            print(
-                f"  - Image URL: /api/slide-image/{image_session_id}/{slide_num}?type=thumbnail"
-            )
             print(f"  - Image session: {image_session_id}")
             print(f"  - Audio session: {feedback_session_id}")
             print(f"  - Image Url: {image_url}")
@@ -970,7 +906,6 @@ def generate_feedback(
                 "feedback": parsed_feedback,
                 "raw_feedback_text": feedback_text,
             }
-
             structured_feedback["slides"].append(slide_data)
 
         # Add Q&A feedback if available
@@ -999,7 +934,10 @@ def generate_feedback(
 
 
 def generate_slide_feedback(
-    slide_number, slide_audio_data, slide_content, conversation_history
+    slide_number,
+    slide_audio_data,
+    slide_content,
+    conversation_history,
 ):
     """
     Generate feedback for a specific slide
@@ -1072,7 +1010,10 @@ For slide feedback, focus ONLY on the slide content and delivery. Q&A aspects ar
         return f"**Slide {slide_number} Feedback:** Error generating feedback for this slide: {str(e)}"
 
 
-def generate_qa_feedback(conversation_history, qa_segments=None):
+def generate_qa_feedback(
+    conversation_history,
+    qa_segments=None,
+):
     """
     Generate feedback for the Q&A portion focusing on impromptu responses and composure
 
