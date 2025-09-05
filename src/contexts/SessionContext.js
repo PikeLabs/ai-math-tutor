@@ -1,4 +1,10 @@
-import { createContext, useState, useEffect, useMemo } from "react";
+import {
+	createContext,
+	useState,
+	useEffect,
+	useMemo,
+	useCallback,
+} from "react";
 import { safeParse } from "../utils/feedback.utils";
 
 export const SessionCtx = createContext(null);
@@ -8,9 +14,6 @@ const SESSION_ID_KEY = "sessionId";
 const STUDENT_ID_KEY = "studentId";
 const STUDENT_NAME_KEY = "studentName";
 
-const CURRENT_PDF_UPLOAD_ID_KEY = "currentPDFUploadId";
-const CURRENT_PDF_SLIDE_COUNT_KEY = "currentPDFSlideCount";
-const CURRENT_PDF_S3_URL_KEY = "currentPDFS3Url";
 const PITCH_FEEDBACK_KEY = "pitchFeedback";
 
 export default function SessionProvider({ children }) {
@@ -53,41 +56,20 @@ export default function SessionProvider({ children }) {
 		}
 	}, [hasSeenInstructions]);
 
-	const getPdfUploadId = () =>
-		sessionStorage.getItem(CURRENT_PDF_UPLOAD_ID_KEY) || "";
-	const setPdfUploadId = (uploadId) =>
-		uploadId
-			? sessionStorage.setItem(CURRENT_PDF_UPLOAD_ID_KEY, uploadId)
-			: sessionStorage.removeItem(CURRENT_PDF_UPLOAD_ID_KEY);
-
-	const getPdfSlideCount = () =>
-		Number(sessionStorage.getItem(CURRENT_PDF_SLIDE_COUNT_KEY) || 0);
-	const setPdfSlideCount = (slide_count) =>
-		slide_count
-			? sessionStorage.setItem(CURRENT_PDF_SLIDE_COUNT_KEY, String(slide_count))
-			: sessionStorage.removeItem(CURRENT_PDF_SLIDE_COUNT_KEY);
-
-	// TODO: I don't think we need these ones...
-	const getPdfS3Url = () =>
-		sessionStorage.getItem(CURRENT_PDF_S3_URL_KEY) || "";
-	const setPdfS3Url = (s3Url) =>
-		s3Url
-			? sessionStorage.setItem(CURRENT_PDF_S3_URL_KEY, s3Url)
-			: sessionStorage.removeItem(CURRENT_PDF_S3_URL_KEY);
-
-	const getPitchFeedback = () => {
+	const getPitchFeedback = useCallback(() => {
 		const raw = sessionStorage.getItem(PITCH_FEEDBACK_KEY);
 		return safeParse(raw);
-	};
-	const setPitchFeedback = (json) => {
+	}, []);
+
+	const setPitchFeedback = useCallback((json) => {
 		if (json === null) {
 			sessionStorage.removeItem(PITCH_FEEDBACK_KEY);
 		} else {
 			sessionStorage.setItem(PITCH_FEEDBACK_KEY, JSON.stringify(json));
 		}
-	};
+	}, []);
 
-	const clearSessionStorage = () => {
+	const clearSessionStorage = useCallback(() => {
 		setSessionId("");
 		setStudentId("");
 		setStudentName("");
@@ -97,11 +79,8 @@ export default function SessionProvider({ children }) {
 		sessionStorage.removeItem(STUDENT_NAME_KEY);
 		sessionStorage.removeItem(SEEN_KEY);
 
-		setPdfUploadId();
-		setPdfSlideCount();
-		setPdfS3Url();
 		setPitchFeedback();
-	};
+	}, [setPitchFeedback]);
 
 	const markInstructionsSeen = () => setHasSeenInstructions(true);
 	const resetInstructionsSeen = () => setHasSeenInstructions(false);
@@ -119,16 +98,18 @@ export default function SessionProvider({ children }) {
 			studentId,
 			studentName,
 
-			getPdfUploadId,
-			setPdfUploadId,
-			getPdfSlideCount,
-			setPdfSlideCount,
-			getPdfS3Url,
-			setPdfS3Url,
 			getPitchFeedback,
 			setPitchFeedback,
 		}),
-		[sessionId, studentId, studentName, hasSeenInstructions]
+		[
+			sessionId,
+			studentId,
+			studentName,
+			hasSeenInstructions,
+			clearSessionStorage,
+			getPitchFeedback,
+			setPitchFeedback,
+		]
 	);
 
 	return <SessionCtx.Provider value={value}>{children}</SessionCtx.Provider>;

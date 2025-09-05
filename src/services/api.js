@@ -427,11 +427,10 @@ export const postPdfForSlides = async (formdata) => {
 };
 
 // TODO: Pass in the currentPDFSession/currentPDFUploadId
-export const deleteSessionPdf = async (sessionId, previousUploadId) => {
+export const deleteSessionPdf = async (sessionId) => {
 	const r = await fetch(ENDPOINTS.uploads.deleteSessionPdf(sessionId), {
 		method: "DELETE",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ previousUploadId }),
 	});
 
 	let data;
@@ -480,6 +479,7 @@ export const postAssignmentSlides = async (assignment, { start, end }) => {
 	return data;
 };
 
+// TODO: This is unused
 export async function getSessionFeedback(sessionId) {
 	const r = await fetch(`${ENDPOINTS.professor.session(sessionId)}`, {
 		method: "GET",

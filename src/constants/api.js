@@ -8,7 +8,6 @@ export const IMAGE_BASE = API_BASE.endsWith("/api/v1")
 export const ENDPOINTS = {
 	health: `${API_BASE}/health`,
 	assignments: {
-		file: (filename) => `${API_BASE}/assignments/${filename}`,
 		slides: (assignment) => `${API_BASE}/assignments/${assignment}/slides`,
 	},
 	chat: {
@@ -19,14 +18,6 @@ export const ENDPOINTS = {
 		create: `${API_BASE}/feedback`, // plain save
 		generate: `${API_BASE}/feedback/generate`, // generate & save
 		test: `${API_BASE}/feedback/test`,
-	},
-	media: {
-		slideImage: (uploadId, slideNumber, type = "thumbnail") =>
-			`${API_BASE}/slide-image/${uploadId}/${slideNumber}?type=${encodeURIComponent(
-				type
-			)}`,
-		audioSegment: (sessionId, slideNumber) =>
-			`${API_BASE}/audio-segment/${sessionId}/${slideNumber}`,
 	},
 	professor: {
 		sessions: `${API_BASE}/professor/sessions`,

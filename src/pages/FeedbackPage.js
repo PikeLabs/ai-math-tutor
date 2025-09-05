@@ -6,84 +6,61 @@ import { deleteSessionPdf } from "../services/api";
 import { useSession } from "../hooks/useSession";
 
 // import { getTestFeedback } from "../services/api";
+const emptyFeedback = {
+	feedback_type: "legacy",
+	slides: [],
+	qa_feedback: null,
+	legacy_text: null,
+};
 
 // TODO: move to components/student/ since this is the student flow of feedback
 export default function FeedbackPage() {
-	const [feedbackData, setFeedbackData] = useState(null);
+	const { sessionId, getPitchFeedback } = useSession();
+	const [feedbackData, setFeedbackData] = useState(emptyFeedback);
+	const [error, setError] = useState(
+		"Oops, something went wrong and we could not generate your feedback"
+	);
 	const [isLoading, setIsLoading] = useState(true);
 
-	const { sessionId } = useSession();
 	const navigate = useNavigate();
 
 	const goBack = () => navigate(-1);
 
-	// const handleLoadTestFeedback = async () => {
-	// 	try {
-	// 		const data = await getTestFeedback();
-	// 		if (data?.feedback) {
-	// 			const legacyData = {
-	// 				feedback_type: "legacy",
-	// 				slides: [],
-	// 				qa_feedback: null,
-	// 				legacy_text: data.feedback,
-	// 			};
-	// 			localStorage.setItem("pitchFeedback", JSON.stringify(legacyData));
-	// 			setFeedbackData(legacyData);
-	// 		}
-	// 	} catch (error) {
-	// 		console.error("Error loading test feedback:", error);
-	// 	}
-	// };
-
 	useEffect(() => {
-		const storedFeedback = localStorage.getItem("pitchFeedback");
+		const storedFeedback = getPitchFeedback();
+		console.log("Parsed Feedback JSON:", storedFeedback);
 		try {
-			const parsed = JSON.parse(storedFeedback);
-			const structured = parsed?.structured || parsed; // tolerate both shapes
+			// TODO: Now that we keep everything in SlideAssets,
+			// maybe let's rm the json?
+			const structured = storedFeedback?.structured || storedFeedback; // tolerate both shapes
 
 			if (structured?.slides) {
 				setFeedbackData(structured);
-			} else {
-				setFeedbackData({
-					feedback_type: "legacy",
-					slides: [],
-					qa_feedback: null,
-					legacy_text: storedFeedback,
-				});
 			}
 		} catch (error) {
-			setFeedbackData({
-				feedback_type: "legacy",
-				slides: [],
-				qa_feedback: null,
-				legacy_text: storedFeedback,
-			});
+			setError(
+				"Oops, something went wrong and we could not generate your feedback..."
+			);
+			console.error("Error parsing stored feedback:", error);
 		} finally {
 			setIsLoading(false);
 		}
-	}, []);
+	}, [getPitchFeedback]);
 
 	useEffect(() => {
-		const uploadId = localStorage.getItem("currentPDFUploadId");
-		if (!sessionId || !uploadId) return;
+		if (!sessionId) return;
 
 		(async () => {
 			try {
 				// TODO: Are there other items on local storage I should remove?
-				await deleteSessionPdf(sessionId, uploadId);
-				localStorage.removeItem("currentPDFUploadId");
+				// TODO: I don't like this being called on every page reload.
+				// TODO: Lets think about doing all the cleaning in generate_feedback
+				await deleteSessionPdf(sessionId);
 			} catch (err) {
 				console.warn("PDF cleanup failed (non-blocking)");
 			}
 		})();
-	}, []);
-
-	let loadingContent = isLoading && (
-		<div className="flex items-center justify-center py-6 text-gray-500 text-sm">
-			<div className="animate-spin h-5 w-5 border-2 border-gray-300 border-t-blue-500 rounded-full mr-2"></div>
-			Loading feedback details...
-		</div>
-	);
+	}, [sessionId]);
 
 	// TODO: Do we want a back button in this page?
 	const backButton = !isLoading && (
@@ -96,8 +73,21 @@ export default function FeedbackPage() {
 		</button>
 	);
 
+	let loadingContent = isLoading && (
+		<div className="flex items-center justify-center py-6 text-gray-500 text-sm">
+			<div className="animate-spin h-5 w-5 border-2 border-gray-300 border-t-blue-500 rounded-full mr-2"></div>
+			Loading feedback details...
+		</div>
+	);
+
 	const feedbackContent = !isLoading && (
 		<FeedbackReport feedback={feedbackData} />
+	);
+
+	const errorContent = error && !isLoading && (
+		<div className="text-red-600 text-md font-medium text-center mb-4">
+			{error}
+		</div>
 	);
 
 	return (
@@ -109,6 +99,7 @@ export default function FeedbackPage() {
 					</h1>
 				</div>
 				{loadingContent}
+				{errorContent}
 				{feedbackContent}
 			</div>
 		</div>
