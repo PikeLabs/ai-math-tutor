@@ -1,7 +1,8 @@
-from flask import Blueprint, request, jsonify, session
 import os
 import bcrypt
+from flask import Blueprint, request, session
 
+from utils.http import bad_request, unauthorized, ok, internal_error
 
 auth_bp = Blueprint(
     "auth_bp",
@@ -20,31 +21,33 @@ def login_professor():
     password = (data.get("password") or "").encode("utf-8")
 
     if not password:
-        return jsonify({"error": "Password required"}), 400
+        return bad_request("Password required")
 
     stored_pw_hash = _get_pw_hash().encode("utf-8")
     if not stored_pw_hash:
-        return jsonify({"error": "Server auth not configured"}), 500
+        return internal_error("Server auth not configured")
 
-    ok = False
+    pw = False
     try:
-        ok = bcrypt.checkpw(password, stored_pw_hash)
+        pw = bcrypt.checkpw(password, stored_pw_hash)
     except Exception:
-        ok = False
+        pw = False
 
-    if not ok:
-        return jsonify({"ok": False, "error": "Invalid credentials"}), 401
+    if not pw:
+        return unauthorized("Invalid credentials")
 
     session["is_professor"] = True
-    return jsonify({"ok": True})
+    payload = {"ok": True}
+
+    return ok(payload)
 
 
 @auth_bp.post("/auth/professor/logout")
 def logout():
     session.pop("is_professor", None)
-    return jsonify({"ok": True})
+    return ok({"ok": True})
 
 
 @auth_bp.get("/auth/professor/me")
 def me():
-    return jsonify({"isProfessor": bool(session.get("is_professor"))})
+    return ok({"isProfessor": bool(session.get("is_professor"))})

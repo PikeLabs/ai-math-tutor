@@ -1,4 +1,5 @@
 from flask import Blueprint, request
+
 from utils.http import ok, bad_request
 from services.database_service import add_conversation, add_conversations_bulk
 

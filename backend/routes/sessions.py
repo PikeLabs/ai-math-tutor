@@ -1,5 +1,6 @@
 from flask import Blueprint, request
 from prisma.enums import SessionStatus
+
 from services.database_service import (
     create_session,
     create_student,
@@ -11,7 +12,6 @@ from services.database_service import (
 from utils.http import ok, bad_request, not_found
 from utils.parsing import parse_int, parse_iso_to_utc
 from middleware.auth import professor_required
-from config.paths import ASSIGNMENTS_DIR
 
 
 bp = Blueprint("sessions", __name__)
@@ -88,8 +88,10 @@ def api_list_sessions_route():
 @professor_required
 def api_get_session_route(session_id: str):
     s = get_session_by_id(session_id)
+
     if not s:
         return not_found("Session not found")
+
     return ok(s.dict())
 
 
