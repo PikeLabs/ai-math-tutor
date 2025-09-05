@@ -27,12 +27,14 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: professor-be
-    env_file: ./backend/.env
+    env_file:
+      - ./backend/.env
     environment:
       - PRISMA_MIGRATE_MODE=dev
       # Set PRISMA_FRESH="1" before you build to wipe the db
       - PRISMA_FRESH=0
-      - PRISMA_GENERATE_ON_BOOT=0 # set to "auto" to update schemas
+      - PRISMA_GENERATE_ON_BOOT=auto # set to "auto" to update schemas
+      - PRISMA_USE_NODEJS_BIN=1           # use nodejs-bin from requirements.txt
       - FE_ORIGIN=http://localhost:3000
       - COOKIE_SECURE=0
       - GUNICORN_RELOAD=1

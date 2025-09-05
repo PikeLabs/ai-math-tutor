@@ -19,11 +19,9 @@ RUN python -m pip install --upgrade pip && \
 
 # Dev: generate client once so local starts are quick
 COPY prisma ./prisma
-RUN python -m prisma generate --schema ./prisma/schema.prisma
   
 # Copy backend code
 COPY . /app/backend/
-
 
 # Tell Prisma where the schema is (inside backend/)
 ENV PRISMA_SCHEMA=/app/backend/prisma/schema.prisma
