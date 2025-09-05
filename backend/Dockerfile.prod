@@ -6,7 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PRISMA_USE_NODEJS_BIN=1 \
     PRISMA_GENERATE_ON_BOOT=1 \
-    PRISMA_MIGRATE_MODE=deploy
+    PRISMA_MIGRATE_MODE=deploy \
+    APP_ENV=production
 
 # System deps you actually use
 RUN apt-get update && apt-get install -y --no-install-recommends \

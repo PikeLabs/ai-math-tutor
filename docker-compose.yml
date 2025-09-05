@@ -20,7 +20,7 @@ services:
       - "3000:3000"
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
 
   backend:
     build:
@@ -48,11 +48,11 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5001/api/v1/health >/dev/null"]
-      interval: 1m30s
-      timeout: 30s
+      test: ["CMD-SHELL", "curl -fsS --max-time 2 http://localhost:5001/api/v1/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
       retries: 5
-      start_period: 30s
+      start_period: 5s
 
   db:
     image: postgres:16-alpine
@@ -69,11 +69,11 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d aimath -h localhost -p 5432"]
-      interval: 1m
-      timeout: 30s
+      test: ["CMD-SHELL", "pg_isready -U admin -d aimath -h localhost -p 5432 || exit 1"]
+      interval: 5s
+      timeout: 3s
       retries: 5
-      start_period: 30s
+      start_period: 5s
 
 volumes:
   dbdata:

@@ -27,3 +27,6 @@ build
 
 # Don't copy any of the backend code into the docker image
 /backend
+
+copy_files.sh
+catch_ai_up.txt
