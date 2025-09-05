@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import BackButton from "./ui/BackButton";
-import { useSession } from "../hooks/useSession";
-import { createSession } from "../services/api";
+import BackButton from "../ui/BackButton";
+import { useSession } from "../../hooks/useSession";
+import { createSession } from "../../services/api";
 
 export default function StudentNameInput() {
 	const [name, setName] = useState("");
