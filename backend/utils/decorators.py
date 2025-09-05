@@ -1,5 +1,6 @@
 from functools import wraps
-from flask import request, jsonify
+from flask import request
+from utils.http import bad_request
 
 
 def require_json(fn):
@@ -11,9 +12,9 @@ def require_json(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if not request.is_json:
-            return jsonify({"error": "Content-Type must be application/json"}), 400
+            return bad_request("Content-Type must be application/json")
         if not request.get_json(silent=True):
-            return jsonify({"error": "Request body must be valid JSON"}), 400
+            return bad_request("Request body must be valid JSON")
         return fn(*args, **kwargs)
 
     return wrapper
