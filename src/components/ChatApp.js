@@ -127,7 +127,7 @@ function GeneratedFeedback({
 }
 
 export default function ChatApp() {
-	const { sessionId } = useSession();
+	const { sessionId, setPitchFeedback } = useSession();
 	const {
 		getLatestRecording,
 		interventionState,
@@ -181,9 +181,6 @@ export default function ChatApp() {
 				throw new Error("No presentation audio was recorded.");
 			}
 
-			const pdfUploadId = localStorage.getItem("currentPDFUploadId");
-			const pdfSlideCount = localStorage.getItem("currentPDFSlideCount");
-
 			// Send with recording as multipart form data
 			const formData = new FormData();
 			formData.append("messages", JSON.stringify(messages));
@@ -191,8 +188,6 @@ export default function ChatApp() {
 			formData.append("recording", recordingBlob, "presentation.wav");
 			formData.append("slideTimestamps", JSON.stringify(slideTimestamps));
 			formData.append("qaTimestamps", JSON.stringify(qaTimestamps));
-			formData.append("pdfUploadId", pdfUploadId || "");
-			formData.append("pdfSlideCount", pdfSlideCount || "");
 			formData.append("sessionId", sessionId);
 
 			const data = await generateFeedbackMultipart(formData);
@@ -205,12 +200,12 @@ export default function ChatApp() {
 				payloadToStore?.feedback ||
 				payloadToStore?.qa_feedback
 			) {
-				localStorage.setItem("pitchFeedback", JSON.stringify(payloadToStore));
+				setPitchFeedback(payloadToStore);
 				setFeedbackGenerated(true);
 			}
 		} catch (err) {
 			console.error("Feedback generation failed:", err);
-			setGenError("Feedback generation failed", err);
+			setGenError("Feedback generation failed");
 		} finally {
 			setIsLoading(false);
 		}
