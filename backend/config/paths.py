@@ -6,6 +6,8 @@ BACKEND_ROOT = os.path.dirname(os.path.abspath(os.path.join(__file__, "..")))
 
 # Allow overriding at deploy time (e.g., STORAGE_ROOT=/tmp on read-only FS)
 STORAGE_ROOT = os.getenv("STORAGE_ROOT", os.path.join(BACKEND_ROOT, "storage"))
+if os.getenv("STORAGE_ROOT"):
+    os.environ.setdefault("TMPDIR", STORAGE_ROOT)
 
 ASSIGNMENTS_DIR = os.path.join(STORAGE_ROOT, "assignments")  # original PDFs
 SLIDE_IMAGES_DIR = os.path.join(STORAGE_ROOT, "slide_images")  # derived PNGs
