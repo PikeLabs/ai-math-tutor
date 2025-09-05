@@ -17,9 +17,7 @@ const emptyFeedback = {
 export default function FeedbackPage() {
 	const { sessionId, getPitchFeedback } = useSession();
 	const [feedbackData, setFeedbackData] = useState(emptyFeedback);
-	const [error, setError] = useState(
-		"Oops, something went wrong and we could not generate your feedback"
-	);
+	const [error, setError] = useState("");
 	const [isLoading, setIsLoading] = useState(true);
 
 	const navigate = useNavigate();
@@ -28,7 +26,7 @@ export default function FeedbackPage() {
 
 	useEffect(() => {
 		const storedFeedback = getPitchFeedback();
-		console.log("Parsed Feedback JSON:", storedFeedback);
+
 		try {
 			// TODO: Now that we keep everything in SlideAssets,
 			// maybe let's rm the json?
@@ -36,6 +34,9 @@ export default function FeedbackPage() {
 
 			if (structured?.slides) {
 				setFeedbackData(structured);
+				setError("");
+			} else {
+				setError("No feedback found for this session.");
 			}
 		} catch (error) {
 			setError(
