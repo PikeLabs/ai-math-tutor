@@ -14,9 +14,63 @@ import { formatTime } from "../utils/recording.utils";
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
 const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10MB; adjust if needed
 
-function RecordingStatus({ isRecording, isPaused, recordingTime }) {
+function RecordingBar({
+	isRecording,
+	isPaused,
+	recordingTime,
+	interventionState,
+	answerActive,
+	answerSecondsDefault,
+	onContinue,
+}) {
+	const [answerSecondsLeft, setAnswerSecondsLeft] = useState(0);
+	const answerTimerRef = useRef(null);
+	const onContinueRef = useRef(onContinue);
+
+	useEffect(() => {
+		onContinueRef.current = onContinue;
+	}, [onContinue]);
+
+	// Start/stop the local countdown when in Q&A and answer window is active.
+	useEffect(() => {
+		const inQA = interventionState === "questioning";
+		if (inQA && answerActive) {
+			// reset any prior
+			if (answerTimerRef.current) {
+				clearInterval(answerTimerRef.current);
+				answerTimerRef.current = null;
+			}
+			setAnswerSecondsLeft(answerSecondsDefault || 30);
+			answerTimerRef.current = setInterval(() => {
+				setAnswerSecondsLeft((prev) => {
+					if (prev <= 1) {
+						clearInterval(answerTimerRef.current);
+						answerTimerRef.current = null;
+						// behaves like clicking Continue
+						onContinueRef.current?.("timeout");
+						return 0;
+					}
+					return prev - 1;
+				});
+			}, 1000);
+		} else {
+			if (answerTimerRef.current) {
+				clearInterval(answerTimerRef.current);
+				answerTimerRef.current = null;
+			}
+			setAnswerSecondsLeft(0);
+		}
+		return () => {
+			if (answerTimerRef.current) {
+				clearInterval(answerTimerRef.current);
+				answerTimerRef.current = null;
+			}
+		};
+	}, [interventionState, answerActive, answerSecondsDefault]);
+
+	// ----- Recording status row -----
 	const textStyles = "text-md font-medium";
-	let recordingStatus = (
+	let statusRow = (
 		<div className={`${textStyles} text-gray-500`}>Waiting to start...</div>
 	);
 	let formattedTime =
@@ -24,7 +78,7 @@ function RecordingStatus({ isRecording, isPaused, recordingTime }) {
 
 	// Paused status
 	if (isPaused) {
-		recordingStatus = (
+		statusRow = (
 			<>
 				{/* <div className={`${textStyles} text-white`}>Recording Paused</div> */}
 				<PausedIcon />
@@ -34,7 +88,7 @@ function RecordingStatus({ isRecording, isPaused, recordingTime }) {
 			</>
 		);
 	} else if (isRecording) {
-		recordingStatus = (
+		statusRow = (
 			<>
 				<RecordingIcon />
 				<span className="ml-3 text-md font-medium text-red-600">
@@ -44,9 +98,38 @@ function RecordingStatus({ isRecording, isPaused, recordingTime }) {
 		);
 	}
 
+	let countdownTimerContent = null;
+	if (
+		interventionState === "questioning" &&
+		answerActive &&
+		isRecording &&
+		!isPaused
+	) {
+		const timeLeft = formatTime(answerSecondsLeft);
+		const handleOnContinue = () => {
+			onContinue("continue");
+		};
+
+		countdownTimerContent = (
+			<div className="flex items-center justify-center gap-3">
+				<div className="px-3 py-1 rounded bg-yellow-100 text-yellow-800 font-semibold">
+					Time left: {timeLeft}
+				</div>
+				<button
+					onClick={handleOnContinue}
+					className="control-btn"
+					title="Finish answer and continue"
+				>
+					Continue
+				</button>
+			</div>
+		);
+	}
+
 	return (
-		<div className="w-full flex items-center justify-center py-3">
-			{recordingStatus}
+		<div className="w-full flex flex-col items-center justify-center py-3 gap-2">
+			<div className="flex items-center">{statusRow}</div>
+			{countdownTimerContent}
 		</div>
 	);
 }
@@ -91,6 +174,10 @@ export default function PDFViewer() {
 		isRecording,
 		recordingTime,
 		startRecording,
+		interventionState,
+		answerActive,
+		endAnswerWindow,
+		answerSecondsDefault,
 		setSelectedAssignment: onAssignmentChange,
 		handleSlideAdvance: onSlideAdvance,
 		handleSlideLockTriggered: onSlideLockTriggered,
@@ -167,6 +254,7 @@ export default function PDFViewer() {
 			fileType === "application/x-pdf" ||
 			fileType === "application/acrobat";
 		const isPdfByName = /\.pdf$/i.test(fileName || "");
+
 		if (!file || !(isPdfByType || isPdfByName)) {
 			setError("Please upload a valid PDF file.");
 			return;
@@ -198,7 +286,6 @@ export default function PDFViewer() {
 			formData.append("sessionId", sessionId);
 		}
 
-
 		try {
 			const data = await postPdfForSlides(formData);
 
@@ -217,6 +304,9 @@ export default function PDFViewer() {
 			setPageNumber(1);
 		} finally {
 			setLoading(false);
+			if (event?.target) {
+				event.target.value = "";
+			}
 		}
 	};
 
@@ -322,6 +412,11 @@ export default function PDFViewer() {
 
 	const handleUploadDifferent = () => {
 		// open the replace-file chooser and keep the modal UX clean
+		if (replaceInputRef.current) {
+			replaceInputRef.current.value = null;
+		}
+
+		// Open the replace-file chooser and keep the modal UX clean
 		replaceInputRef.current?.click();
 		setShowRecordModal(false);
 	};
@@ -500,10 +595,14 @@ export default function PDFViewer() {
 			</div>
 
 			<div className="recording-section">
-				<RecordingStatus
+				<RecordingBar
 					isRecording={isRecording}
 					isPaused={isPaused}
 					recordingTime={recordingTime}
+					interventionState={interventionState}
+					answerActive={answerActive}
+					answerSecondsDefault={answerSecondsDefault}
+					onContinue={endAnswerWindow}
 				/>
 			</div>
 		</div>

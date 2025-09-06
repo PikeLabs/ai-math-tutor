@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 import TTSService from "../TTSService";
 import Avatar from "../Avatar";
@@ -147,26 +147,7 @@ export default function ChatApp() {
 	const [genError, setGenError] = useState(null);
 	const [hasTriggeredFeedback, setHasTriggeredFeedback] = useState(false);
 
-	// Keep ChatApp in sync with the TTS engine.
-	// Subscribes to TTSService and updates avatarState whenever the VC starts/stops speaking or is loading audio.
-	useEffect(() => {
-		const handleTTSStateChange = (state) => setAvatarState(state);
-		TTSService.addListener(handleTTSStateChange);
-		return () => TTSService.removeListener(handleTTSStateChange);
-	}, []);
-
-	useEffect(() => {
-		if (interventionState === "complete" && !hasTriggeredFeedback) {
-			setHasTriggeredFeedback(true);
-			generateFeedback();
-		}
-	}, [interventionState]); // eslint-disable-line react-hooks/exhaustive-deps
-
-	const stopCurrentAudio = () => {
-		TTSService.stop();
-	};
-
-	const generateFeedback = async () => {
+	const generateFeedback = useCallback(async () => {
 		setIsLoading(true);
 		setGenError(null);
 
@@ -209,6 +190,32 @@ export default function ChatApp() {
 		} finally {
 			setIsLoading(false);
 		}
+	}, [
+		getLatestRecording,
+		messages,
+		selectedAssignment,
+		slideTimestamps,
+		qaTimestamps,
+		sessionId,
+	]);
+
+	// Keep ChatApp in sync with the TTS engine.
+	// Subscribes to TTSService and updates avatarState whenever the VC starts/stops speaking or is loading audio.
+	useEffect(() => {
+		const handleTTSStateChange = (state) => setAvatarState(state);
+		TTSService.addListener(handleTTSStateChange);
+		return () => TTSService.removeListener(handleTTSStateChange);
+	}, []);
+
+	useEffect(() => {
+		if (interventionState === "complete" && !hasTriggeredFeedback) {
+			setHasTriggeredFeedback(true);
+			generateFeedback();
+		}
+	}, [interventionState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	const stopCurrentAudio = () => {
+		TTSService.stop();
 	};
 
 	return (

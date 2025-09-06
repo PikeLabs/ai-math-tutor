@@ -18,9 +18,10 @@ import {
 	calculatePresentedSlideRange,
 	buildFollowUpContext,
 } from "../utils";
-import { useVAD } from "../hooks/useVAD";
 
 export const AppContext = createContext(null);
+
+const MAX_PRESENTATION_SECONDS = 10 * 60; // 10 minutes safeguard
 
 export default function AppProvider({ children, sessionId }) {
 	// Chat state
@@ -28,13 +29,13 @@ export default function AppProvider({ children, sessionId }) {
 	const [selectedAssignment, setSelectedAssignment] = useState("");
 
 	// Recording state
+	const [answerActive, setAnswerActive] = useState(false); // UI listens to this
 	const [isRecording, setIsRecording] = useState(false);
 	const [isPaused, setIsPaused] = useState(false);
 	const [mediaRecorder, setMediaRecorder] = useState(null);
 	const [recordingTime, setRecordingTime] = useState(0);
 	const [recordingTimer, setRecordingTimer] = useState(null);
 	const [currentRecordingSegment, setCurrentRecordingSegment] = useState(null);
-	// const [audioBlob, setAudioBlob] = useState(null);
 
 	// Intervention state
 	const [interventionState, setInterventionState] = useState("inactive"); // 'inactive' | 'questioning' | 'complete'
@@ -46,14 +47,18 @@ export default function AppProvider({ children, sessionId }) {
 	const [slideTimestamps, setSlideTimestamps] = useState([]);
 	const [qaTimestamps, setQaTimestamps] = useState([]);
 
+	// Answer-window (countdown) state
+	const answerStartRef = useRef(null); // already present (used for QA ranges)
+	const answerDefaultSecondsRef = useRef(30); // default countdown per requirement
+	// (Optional) sequence id if we ever need to force re-start logic in the UI
+	const answerWindowSeqRef = useRef(0);
+
 	// track live values to avoid stale closures
 	const recRef = useRef(isRecording);
 	const pausedRef = useRef(isPaused);
 	const pausedByAIRef = useRef(false);
 
-	// Track the “answer” window (we only act on VAD when we’re expecting the student to answer)
-	const awaitingAnswerRef = useRef(false);
-	const answerStartRef = useRef(null);
+	// Track the “answer” window (only when we’re expecting the student to answer)
 	const interventionRef = useRef(interventionState);
 
 	const generateFollowUpQuestion = useCallback(
@@ -135,7 +140,6 @@ export default function AppProvider({ children, sessionId }) {
 				clearInterval(recordingTimer);
 				setRecordingTimer(null);
 			}
-			console.log("Recording paused");
 		} else {
 			// optional debug
 			console.log("[pause] skipped — no active recorder");
@@ -155,49 +159,6 @@ export default function AppProvider({ children, sessionId }) {
 			console.log("Recording resumed");
 		}
 	}, [isPaused, mediaRecorder]);
-
-	// VAD setup/teardown
-	const onUserStoppedTalking = useCallback(async () => {
-		if (!awaitingAnswerRef.current) return;
-		awaitingAnswerRef.current = false;
-		pauseRecording?.();
-
-		if (answerStartRef.current != null) {
-			const start = answerStartRef.current;
-			const end = recordingTime;
-
-			if (end > start) {
-				setQaTimestamps((prev) => [...prev, { start, end }]);
-			}
-			answerStartRef.current = null;
-		}
-
-		// Advance the intervention flow: ask follow-up (Q2) or finish.
-		try {
-			await handleInterventionResponse("[voice answer]", currentSlideRange);
-		} catch (e) {
-			console.error("Failed to advance after VAD silence:", e);
-		}
-	}, [
-		pauseRecording,
-		handleInterventionResponse,
-		currentSlideRange,
-		recordingTime,
-	]);
-
-	// VAD hook listens to user mic and triggers onSilence when they stop talking
-	const {
-		start: startVAD,
-		stop: stopVAD,
-		arm: armVAD,
-	} = useVAD({
-		onSilence: onUserStoppedTalking,
-		// threshold: 0.03, // can tweak 0.02–0.05
-		// silenceMs: 1500, // can tweak 1200–2000
-		// calibrationMs: 300,
-		// pollMs: 100,
-		shouldCount: () => recRef.current && !pausedRef.current,
-	});
 
 	const startRecording = useCallback(async () => {
 		try {
@@ -225,19 +186,14 @@ export default function AppProvider({ children, sessionId }) {
 			setRecordingTime(0);
 
 			// Start timer
-			const timer = setInterval(
-				() => setRecordingTime((prev) => prev + 1),
-				1000
-			);
+			const timer = setInterval(() => {
+				setRecordingTime((prev) => prev + 1);
+			}, 1000);
 			setRecordingTimer(timer);
-
-			// Start VAD once we have a live mic stream
-			await startVAD(stream);
-			console.log("Recording started");
 		} catch (err) {
 			alert("Error accessing microphone: " + err.message);
 		}
-	}, [startVAD]);
+	}, []);
 
 	const stopRecording = useCallback(() => {
 		if (mediaRecorder && (isRecording || isPaused)) {
@@ -252,25 +208,74 @@ export default function AppProvider({ children, sessionId }) {
 			}
 
 			// hard reset conversation-side gates
-			awaitingAnswerRef.current = false;
 			pausedByAIRef.current = false;
-
-			stopVAD();
-			console.log("Recording stopped");
 		}
-	}, [mediaRecorder, isRecording, isPaused, recordingTimer, stopVAD]);
+	}, [mediaRecorder, isRecording, isPaused, recordingTimer]);
+
+	// ---- Answer window helpers (countdown UI lives in PDFViewer) ----
+	const startAnswerWindow = useCallback(
+		(seconds = 30) => {
+			// mark the start so we can stamp QA ranges later (based on recordingTime seconds)
+			answerStartRef.current = recordingTime;
+			answerDefaultSecondsRef.current = seconds;
+			setAnswerActive(true);
+			answerWindowSeqRef.current += 1;
+		},
+		[recordingTime]
+	);
+
+	const endAnswerWindow = useCallback(
+		async (reason = "continue") => {
+			if (!answerActive) return;
+			setAnswerActive(false);
+
+			// stop the student’s answer segment
+			if (recRef.current && !pausedRef.current) {
+				pauseRecording?.();
+			}
+
+			// stamp QA timestamps using recording-time seconds
+			if (answerStartRef.current != null) {
+				const start = answerStartRef.current;
+				const end = recordingTime;
+				if (end > start) {
+					setQaTimestamps((prev) => [...prev, { start, end }]);
+				}
+				answerStartRef.current = null;
+			}
+
+			// Advance the intervention flow: ask follow-up (Q2) or finish.
+			try {
+				await handleInterventionResponse(
+					"[voice/timer answer]",
+					currentSlideRange
+				);
+			} catch (e) {
+				console.error("Failed to advance after answer window end:", e);
+			}
+		},
+		[
+			answerActive,
+			pauseRecording,
+			handleInterventionResponse,
+			currentSlideRange,
+			recordingTime,
+		]
+	);
 
 	const getLatestRecording = useCallback(() => {
 		return new Promise((resolve) => {
 			if (mediaRecorder && (isRecording || isPaused)) {
 				// We need to collect the audio chunks ourselves since we're overriding onstop
 				const audioChunks = [];
+
 				// Override the data handler temporarily
 				const originalOnData = mediaRecorder.ondataavailable;
 				mediaRecorder.ondataavailable = (event) => {
 					audioChunks.push(event.data);
 					originalOnData && originalOnData(event);
 				};
+
 				// Set up a temporary handler for when recording stops
 				const originalOnStop = mediaRecorder.onstop;
 				mediaRecorder.onstop = (event) => {
@@ -287,7 +292,6 @@ export default function AppProvider({ children, sessionId }) {
 					clearInterval(recordingTimer);
 					setRecordingTimer(null);
 				}
-				stopVAD(); // avoid dangling analyser/timer
 			} else {
 				resolve(currentRecordingSegment);
 			}
@@ -298,7 +302,6 @@ export default function AppProvider({ children, sessionId }) {
 		isPaused,
 		recordingTimer,
 		currentRecordingSegment,
-		stopVAD,
 	]);
 
 	const generateVCQuestion = useCallback(
@@ -318,12 +321,10 @@ export default function AppProvider({ children, sessionId }) {
 					{ role: "user", content: contextMessage },
 				];
 
-				// let response;
 				let data;
 
 				// If we have an audio segment, send as multipart form data
 				if (audioSegment && audioSegment instanceof Blob) {
-					console.log("🚀 Sending audio data to backend as multipart form...");
 					const formData = new FormData();
 					formData.append("messages", JSON.stringify(interventionMessages));
 					formData.append("selectedAssignment", selectedAssignment);
@@ -333,7 +334,6 @@ export default function AppProvider({ children, sessionId }) {
 
 					data = await createChatWithAudio(formData);
 				} else {
-					console.log("⚠️ No audio segment found, sending without audio...");
 					data = await createChat({
 						sessionId,
 						messages: interventionMessages,
@@ -341,8 +341,6 @@ export default function AppProvider({ children, sessionId }) {
 						slideNumber: slideRange?.end || "",
 					});
 				}
-
-				// const data = await response.json();
 
 				if (data?.response) {
 					// Add the AI's first VC question to the chat automatically
@@ -400,16 +398,8 @@ export default function AppProvider({ children, sessionId }) {
 				pauseRecording();
 			}
 
-			// we’re about to have the VC speak, so don’t let VAD think we’re still answering
-			awaitingAnswerRef.current = false;
-
 			// Calculate the slide range that was just presented
 			const slideRange = calculatePresentedSlideRange(slideNumber);
-			console.log(`Recording handled for slide ${slideNumber} lock`);
-			console.log(
-				`Slide range just presented: ${slideRange.start}-${slideRange.end}`
-			);
-			console.log(`Audio data provided: ${!!audioData}`);
 
 			// Start intervention session
 			setInterventionState("questioning");
@@ -441,7 +431,6 @@ export default function AppProvider({ children, sessionId }) {
 
 			// Resume recording automatically
 			resumeRecording();
-			console.log("Recording resumed after intervention completion");
 		}
 	}, [interventionState, isPaused, resumeRecording]);
 
@@ -458,12 +447,19 @@ export default function AppProvider({ children, sessionId }) {
 		pausedRef.current = isPaused;
 	}, [isPaused]);
 
+	// Enforce the presentation max length with fresh references
+	useEffect(() => {
+		if (isRecording && recordingTime >= MAX_PRESENTATION_SECONDS) {
+			stopRecording();
+		}
+	}, [isRecording, recordingTime, stopRecording]);
+
 	// Centralized TTS → pause/resume
 	// TTS listener: when VC stops speaking, resume + arm the VAD
 	useEffect(() => {
 		const onTTS = (state) => {
 			if (state?.isSpeaking) {
-				awaitingAnswerRef.current = false;
+				// awaitingAnswerRef.current = false;
 				if (recRef.current && !pausedRef.current) {
 					pauseRecording?.();
 				}
@@ -476,17 +472,14 @@ export default function AppProvider({ children, sessionId }) {
 				if (interventionRef.current === "questioning") {
 					resumeRecording?.();
 					pausedByAIRef.current = false;
-
-					awaitingAnswerRef.current = true;
-					answerStartRef.current = recordingTime;
-					armVAD(); // ← re-arm VAD for this answer window
+					startAnswerWindow();
 				}
 			}
 		};
 
 		TTSService.addListener(onTTS);
 		return () => TTSService.removeListener(onTTS);
-	}, [pauseRecording, resumeRecording, armVAD, recordingTime]);
+	}, [pauseRecording, resumeRecording, recordingTime, startAnswerWindow]);
 
 	const value = useMemo(
 		() => ({
@@ -527,6 +520,12 @@ export default function AppProvider({ children, sessionId }) {
 			setSlideTimestamps,
 			qaTimestamps,
 			setQaTimestamps,
+
+			// answer window
+			answerActive,
+			startAnswerWindow,
+			endAnswerWindow,
+			answerSecondsDefault: answerDefaultSecondsRef.current,
 		}),
 		[
 			// chat
@@ -558,6 +557,11 @@ export default function AppProvider({ children, sessionId }) {
 			// timestamps
 			slideTimestamps,
 			qaTimestamps,
+
+			// answer window
+			answerActive,
+			startAnswerWindow,
+			endAnswerWindow,
 		]
 	);
 
