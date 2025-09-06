@@ -198,29 +198,13 @@ export default function PDFViewer() {
 			formData.append("sessionId", sessionId);
 		}
 
-		// include the last processing session id so the backend can clean local images
-		const prevUploadId = localStorage.getItem("currentPDFUploadId");
-
-		if (prevUploadId) {
-			formData.append("previousUploadId", prevUploadId);
-		}
 
 		try {
 			const data = await postPdfForSlides(formData);
 
-			// persist the NEW upload id and slide count
-			localStorage.setItem("currentPDFUploadId", data.upload_id); // keep compat if backend still returns session_id
-			localStorage.setItem("currentPDFSlideCount", String(data.slide_count));
-
 			// // Use server-provided safe filename for /assignments/slides
 			if (onAssignmentChange) {
 				onAssignmentChange(data.filename); // Use the safe filename that was saved to assignments
-			}
-
-			// Optional: if we want to be able to resume a session later and stream from S3:
-			// TODO: Not sure if we need this?
-			if (data.s3_url) {
-				localStorage.setItem("currentPDFS3Url", data.s3_url);
 			}
 		} catch (error) {
 			console.error("❌ PDF upload error:", error);

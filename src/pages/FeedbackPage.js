@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import FeedbackReport from "../components/feedback/FeedbackReport";
-import { deleteSessionPdf } from "../services/api";
+import BackButton from "../components/ui/BackButton";
+import { getStudentFeedback } from "../services/api";
 import { useSession } from "../hooks/useSession";
 
 // import { getTestFeedback } from "../services/api";
@@ -13,65 +14,64 @@ const emptyFeedback = {
 	legacy_text: null,
 };
 
-// TODO: move to components/student/ since this is the student flow of feedback
 export default function FeedbackPage() {
-	const { sessionId, getPitchFeedback } = useSession();
+	const { sessionId, clearSession } = useSession();
+	const navigate = useNavigate();
+
 	const [feedbackData, setFeedbackData] = useState(emptyFeedback);
 	const [error, setError] = useState("");
 	const [isLoading, setIsLoading] = useState(true);
 
-	const navigate = useNavigate();
-
-	const goBack = () => navigate(-1);
-
 	useEffect(() => {
-		const storedFeedback = getPitchFeedback();
-
-		try {
-			// TODO: Now that we keep everything in SlideAssets,
-			// maybe let's rm the json?
-			const structured = storedFeedback?.structured || storedFeedback; // tolerate both shapes
-
-			if (structured?.slides) {
-				setFeedbackData(structured);
-				setError("");
-			} else {
-				setError("No feedback found for this session.");
-			}
-		} catch (error) {
-			setError(
-				"Oops, something went wrong and we could not generate your feedback..."
-			);
-			console.error("Error parsing stored feedback:", error);
-		} finally {
-			setIsLoading(false);
-		}
-	}, [getPitchFeedback]);
-
-	useEffect(() => {
+		let cancelled = false;
 		if (!sessionId) return;
 
-		(async () => {
+		(async function load() {
+			setIsLoading(true);
+			setError("");
+
 			try {
-				// TODO: Are there other items on local storage I should remove?
-				// TODO: I don't like this being called on every page reload.
-				// TODO: Lets think about doing all the cleaning in generate_feedback
-				await deleteSessionPdf(sessionId);
-			} catch (err) {
-				console.warn("PDF cleanup failed (non-blocking)");
+				const { feedback } = await getStudentFeedback(sessionId);
+				console.log("FEEDBACK RESPONSE:", feedback);
+				if (!cancelled) setFeedbackData(feedback);
+			} catch (error) {
+				if (!cancelled) {
+					setError("Failed to load feedback.");
+				}
+				console.error("Error loading feedback:", error);
+			} finally {
+				if (!cancelled) setIsLoading(false);
 			}
 		})();
+
+		return () => {
+			cancelled = true;
+		};
 	}, [sessionId]);
 
-	// TODO: Do we want a back button in this page?
-	const backButton = !isLoading && (
-		<button
-			type="button"
-			onClick={goBack}
-			className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
-		>
-			← Back to Chat
-		</button>
+	const handleStartNewPresentation = () => {
+		try {
+			clearSession();
+		} finally {
+			navigate("/student");
+		}
+	};
+
+	const handleGoHome = () => {
+		try {
+			clearSession();
+		} finally {
+			navigate("/");
+		}
+	};
+
+	const homeButton = !isLoading && <BackButton onClick={handleGoHome} />;
+	const newPresentationButton = !isLoading && (
+		<BackButton
+			onClick={handleStartNewPresentation}
+			buttonText="Start New Presentation →"
+			ariaLabel="Start New Presentation"
+		/>
 	);
 
 	let loadingContent = isLoading && (
@@ -95,9 +95,11 @@ export default function FeedbackPage() {
 		<div className="flex flex-col items-center p-2">
 			<div className="w-full max-w-5xl">
 				<div className="flex justify-between items-center mb-4">
+					{homeButton}
 					<h1 className="text-xl font-semibold text-center flex-grow">
 						Generated Feedback
 					</h1>
+					{newPresentationButton}
 				</div>
 				{loadingContent}
 				{errorContent}

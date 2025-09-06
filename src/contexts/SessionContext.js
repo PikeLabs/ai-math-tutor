@@ -56,18 +56,6 @@ export default function SessionProvider({ children }) {
 		}
 	}, [hasSeenInstructions]);
 
-	const getPitchFeedback = useCallback(() => {
-		const raw = sessionStorage.getItem(PITCH_FEEDBACK_KEY);
-		return safeParse(raw);
-	}, []);
-
-	const setPitchFeedback = useCallback((json) => {
-		if (json === null) {
-			sessionStorage.removeItem(PITCH_FEEDBACK_KEY);
-		} else {
-			sessionStorage.setItem(PITCH_FEEDBACK_KEY, JSON.stringify(json));
-		}
-	}, []);
 
 	const clearSessionStorage = useCallback(() => {
 		setSessionId("");
@@ -78,9 +66,7 @@ export default function SessionProvider({ children }) {
 		sessionStorage.removeItem(STUDENT_ID_KEY);
 		sessionStorage.removeItem(STUDENT_NAME_KEY);
 		sessionStorage.removeItem(SEEN_KEY);
-
-		setPitchFeedback();
-	}, [setPitchFeedback]);
+	}, []);
 
 	const markInstructionsSeen = () => setHasSeenInstructions(true);
 	const resetInstructionsSeen = () => setHasSeenInstructions(false);
@@ -98,8 +84,6 @@ export default function SessionProvider({ children }) {
 			studentId,
 			studentName,
 
-			getPitchFeedback,
-			setPitchFeedback,
 		}),
 		[
 			sessionId,
@@ -107,8 +91,6 @@ export default function SessionProvider({ children }) {
 			studentName,
 			hasSeenInstructions,
 			clearSessionStorage,
-			getPitchFeedback,
-			setPitchFeedback,
 		]
 	);
 

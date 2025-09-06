@@ -48,6 +48,7 @@ export default function Dashboard() {
 	};
 
 	const handleRefresh = () => {
+		setError("");
 		// manual one-off refresh
 		void tick({ minDurationMs: 1000 }); // give UI time to update
 	};

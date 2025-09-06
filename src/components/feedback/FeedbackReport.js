@@ -114,11 +114,10 @@ function ImageContainer({ image_url, alt, onClick }) {
 		setImageError(true);
 	};
 
-	const thumbSrc = resolveUrl(image_url);
 	return (
 		<div className="mx-auto flex flex-col justify-center align-center gap-3">
 			<SlideImage
-				src={thumbSrc}
+				src={image_url}
 				alt={alt}
 				className="object-contain border-2 border-gray-300 rounded cursor-pointer transition-colors duration-200 hover:border-gray-500"
 				onClick={onClick}
@@ -182,6 +181,7 @@ function FeedbackReportDetail({
 					image_url={image_url}
 					alt={imageColumnText}
 					onClick={handleImageClick}
+					slide_number={slide_number}
 				/>
 			</td>
 

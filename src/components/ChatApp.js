@@ -127,7 +127,7 @@ function GeneratedFeedback({
 }
 
 export default function ChatApp() {
-	const { sessionId, setPitchFeedback } = useSession();
+	const { sessionId } = useSession();
 	const {
 		getLatestRecording,
 		interventionState,
@@ -200,7 +200,7 @@ export default function ChatApp() {
 				payloadToStore?.feedback ||
 				payloadToStore?.qa_feedback
 			) {
-				setPitchFeedback(payloadToStore);
+				// setPitchFeedback(payloadToStore);
 				setFeedbackGenerated(true);
 			}
 		} catch (err) {
