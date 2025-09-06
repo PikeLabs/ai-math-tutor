@@ -22,6 +22,10 @@ export default function StudentRoute({ redirectTo = "/professor/dashboard" }) {
 		);
 	}
 
+	if (sessionId) {
+		return <Outlet />;
+	}
+
 	// If professor is logged in, don't allow access to student routes
 	if (isProfessor) {
 		return (
@@ -33,17 +37,11 @@ export default function StudentRoute({ redirectTo = "/professor/dashboard" }) {
 		);
 	}
 
-	// If not professor, require an active student session
-	if (!sessionId) {
-		return (
-			<Navigate
-				to="/start"
-				replace
-				state={{ from: location.pathname }}
-			/>
-		);
-	}
-
-	// Student route allowed
-	return <Outlet />;
+	return (
+		<Navigate
+			to="/start"
+			replace
+			state={{ from: location.pathname }}
+		/>
+	);
 }

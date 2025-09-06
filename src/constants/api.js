@@ -8,7 +8,8 @@ export const IMAGE_BASE = API_BASE.endsWith("/api/v1")
 export const ENDPOINTS = {
 	health: `${API_BASE}/health`,
 	assignments: {
-		slides: (assignment) => `${API_BASE}/assignments/${assignment}/slides`,
+		slides: (assignment) =>
+			`${API_BASE}/assignments/${encodeURIComponent(assignment)}/slides`,
 	},
 	chat: {
 		json: `${API_BASE}/chat`,

@@ -30,7 +30,7 @@ export default function StudentNameInput() {
 			setSessionId(res.sessionId);
 			setStudentId(res.studentId);
 
-			navigate("/student");
+			navigate("/student", { replace: true });
 		} catch (err) {
 			setErr(
 				err.message ||

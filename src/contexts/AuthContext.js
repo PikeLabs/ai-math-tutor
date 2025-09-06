@@ -21,21 +21,33 @@ export default function AuthProvider({ children }) {
 
 	// bootstrap from /auth/me
 	useEffect(() => {
+		let alive = true;
+		setLoading(true);
+
 		(async () => {
 			try {
 				if (sessionId) {
-					setIsProfessor(false);
-					return;
+					if (alive) setIsProfessor(false);
+				} else {
+					const data = await checkIsProfessor();
+					if (alive) {
+						setIsProfessor(!!data.isProfessor);
+					}
 				}
-
-				const data = await checkIsProfessor();
-				setIsProfessor(!!data.isProfessor);
 			} catch (e) {
-				setIsProfessor(false);
+				if (alive) {
+					setIsProfessor(false);
+				}
 			} finally {
-				setLoading(false);
+				if (alive) {
+					setLoading(false);
+				}
 			}
 		})();
+
+		return () => {
+			alive = false;
+		};
 	}, [sessionId]);
 
 	const login = useCallback(
