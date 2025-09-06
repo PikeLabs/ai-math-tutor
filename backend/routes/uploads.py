@@ -9,7 +9,6 @@ from services.pdf_image_service import (
 )
 from utils.http import bad_request, internal_error, ok
 from config.paths import ASSIGNMENTS_DIR
-from services.pdf_image_service import cleanup_local_pdf_images
 from services.feedback_service import cleanup_old_audio_sessions
 from services.database_service import (
     update_session,
@@ -79,8 +78,6 @@ def api_upload_slides():
 
         slide_count = len(slide_paths) if slide_paths else actual_page_count
 
-        # Upload derived slide images to S3 (thumbnail + full). Do NOT upload the original PDF.
-        s3_url = None
         try:
             # slide_paths format: { <slide_number>: {"full": "/path", "thumbnail": "/path"} }
             for slide_number, paths in (slide_paths or {}).items():
@@ -179,7 +176,6 @@ def api_upload_slides():
         return ok(
             {
                 "session_id": session_id,  # the Session this upload is associated with
-                # "upload_id": upload_id,  # image/audio processing namespace
                 "slide_count": slide_count,
                 "slides": (
                     list(slide_paths.keys())
@@ -187,7 +183,6 @@ def api_upload_slides():
                     else list(range(1, slide_count + 1))
                 ),
                 "filename": safe_filename,  # saved local filename for /assignments/slides
-                "s3_url": s3_url,  # persisted location (optional)
                 "images_processed": bool(slide_paths),
                 "message": "PDF uploaded successfully"
                 + (
@@ -211,43 +206,3 @@ def cleanup_old_files():
     except Exception as e:
         error_message = f"Internal Error: {str(e)}"
         return internal_error(error_message)
-
-
-@bp.delete("/pdf/session/<session_id>")
-def delete_session_pdf(session_id: str):
-    try:
-        # Cleanup local images & the local file
-        cleanup_session_slide_images(session_id)
-        cleanup_local_pdf_images(session_id)
-
-        # Remove previous S3 object if present
-        try:
-            existing = get_session_by_id(session_id)
-        except Exception:
-            existing = None
-
-        if existing and getattr(existing, "pdfUrl", None):
-            prev_pdf = existing.pdfUrl or ""
-            old_key = parse_s3_key_from_url(prev_pdf)
-
-            if old_key:
-                try:
-                    delete_file(old_key)
-                except Exception as e:
-                    print(f"⚠️ Failed to delete S3 object {old_key}: {e}")
-            else:
-                try:
-                    if os.path.exists(prev_pdf):
-                        os.remove(prev_pdf)
-                except Exception as e:
-                    print(f"⚠️ Failed to delete local PDF {prev_pdf}: {e}")
-
-        # Null out the DB fields
-        try:
-            update_session(session_id, {"pdfUrl": None, "slideCount": None})
-        except Exception as e:
-            print(f"⚠️ Failed to clear session {session_id}: {e}")
-
-        return ok({"ok": True})
-    except Exception as e:
-        return internal_error(f"Internal Error: {str(e)}")

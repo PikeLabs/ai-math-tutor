@@ -137,7 +137,7 @@ def chat_with_ai(messages, pdf_context=None, audio_transcription=None):
                 "Use this spoken walkthrough to understand how they presented their ideas, what they emphasized, and tailor your questions accordingly\n\n."
                 "Focus on areas where their explanation might need strengthening or where you detected uncertainty."
             )
-        # Add system prompt to the beginning of messages
+
         # full_messages = [{"role": "system", "content": system_content}] + messages
         full_messages = [{"role": "system", "content": system_content}] + safe_messages
 

@@ -2,7 +2,6 @@ import os, re, warnings
 from typing import Literal
 from functools import lru_cache
 from urllib.parse import urlparse
-from xmlrpc.client import boolean
 import boto3
 from botocore.exceptions import ClientError
 from botocore.config import Config
@@ -60,7 +59,7 @@ def _ensure_aws_enabled(key: str | None) -> bool:
     if not AWS_ENABLED:
         warnings.warn("S3 is not enabled/configured (missing configuration)")
 
-    return boolean(AWS_ENABLED and key)
+    return bool(AWS_ENABLED and key)
 
 
 def build_s3_filename(slide_num: int, type: Literal["thumb", "full", "audio"]) -> str:
