@@ -78,6 +78,26 @@ def list_sessions():
     return trimmed
 
 
+def get_latest_feedback_for_session(session_id: str):
+    """
+    Return the most recent feedback row for a session_id or None.
+    """
+    row = db.feedback.find_first(
+        where={"sessionId": session_id},
+        order={"createdAt": "desc"},
+        include={
+            "session": {
+                "include": {
+                    "conversations": True,
+                    "slideAssets": True,
+                }
+            }
+        },
+    )
+
+    return row
+
+
 # --- Conversations ---
 def add_conversation(
     session_id: str,
