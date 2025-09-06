@@ -34,11 +34,11 @@ function AppRoutes() {
 					/>
 				</Route>
 
+				<Route
+					path="/start"
+					element={<StudentNameInput />}
+				/>
 				<Route element={<StudentRoute />}>
-					<Route
-						path="/start"
-						element={<StudentNameInput />}
-					/>
 					<Route
 						path="/student"
 						element={<StudentFlow />}
