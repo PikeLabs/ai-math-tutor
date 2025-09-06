@@ -5,7 +5,6 @@ import {
 	useMemo,
 	useCallback,
 } from "react";
-import { safeParse } from "../utils/feedback.utils";
 
 export const SessionCtx = createContext(null);
 
@@ -13,8 +12,6 @@ const SEEN_KEY = "hasSeenInstructions";
 const SESSION_ID_KEY = "sessionId";
 const STUDENT_ID_KEY = "studentId";
 const STUDENT_NAME_KEY = "studentName";
-
-const PITCH_FEEDBACK_KEY = "pitchFeedback";
 
 export default function SessionProvider({ children }) {
 	const [sessionId, setSessionId] = useState(
@@ -56,7 +53,6 @@ export default function SessionProvider({ children }) {
 		}
 	}, [hasSeenInstructions]);
 
-
 	const clearSessionStorage = useCallback(() => {
 		setSessionId("");
 		setStudentId("");
@@ -83,7 +79,6 @@ export default function SessionProvider({ children }) {
 			setStudentName,
 			studentId,
 			studentName,
-
 		}),
 		[
 			sessionId,

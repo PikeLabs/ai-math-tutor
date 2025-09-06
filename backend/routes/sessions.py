@@ -1,6 +1,8 @@
+import json
 from flask import Blueprint, request
 from prisma.enums import SessionStatus
 
+from services.media_service import get_presigned_slide_urls
 from services.database_service import (
     create_session,
     create_student,
@@ -92,7 +94,43 @@ def api_get_session_route(session_id: str):
     if not s:
         return not_found("Session not found")
 
-    return ok(s.dict())
+    payload = s.dict()
+    fb = payload.get("feedback")
+    structured = None
+
+    # If feedback exists and has a slideFeedback JSON string, parse & rehydrate
+    if fb:
+        slide_feedback = fb.get("slideFeedback")
+        if isinstance(slide_feedback, str) and slide_feedback.strip():
+            try:
+                structured = json.loads(slide_feedback)
+            except Exception as e:
+                print(f"Error parsing slide feedback JSON: {e}")
+                structured = None
+
+    # If structured exists, refresh presigned URLs (avoid stale links)
+    if structured:
+        image_session_id = (
+            structured.get("pdf_session_id") or payload.get("id") or session_id
+        )
+        audio_session_id = (
+            structured.get("audio_session_id") or payload.get("id") or session_id
+        )
+
+        for sl in structured.get("slides", []):
+            n = sl.get("slide_number")
+            if not n:
+                continue
+            img = get_presigned_slide_urls(image_session_id, n)
+            aud = get_presigned_slide_urls(audio_session_id, n)
+            sl["image_url"] = img.get("thumb")
+            sl["image_url_full"] = img.get("full")
+            sl["audio_url"] = aud.get("audio")
+            sl["audio_mime"] = aud.get("audio_mime")
+
+        payload["feedback"] = structured
+
+    return ok(payload)
 
 
 @bp.put("/professor/session/<session_id>/reviewed")

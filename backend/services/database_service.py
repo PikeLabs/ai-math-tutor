@@ -39,6 +39,7 @@ def get_session_by_id(session_id: str):
         include={
             "student": True,
             "feedback": True,
+            "slideAssets": True,
             "conversations": {
                 "orderBy": {"timestamp": "asc"},
             },

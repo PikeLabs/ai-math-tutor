@@ -4,10 +4,9 @@ import { useReactToPrint } from "react-to-print";
 import FeedbackReport from "../feedback/FeedbackReport";
 import PrintWrapper from "../ui/PrintWrapper";
 import Chevron from "../ui/Chevron";
-import { convertDbFeedbackToDisplay, toLocale } from "../../utils";
+import { toLocale } from "../../utils";
 import { getProfessorSession } from "../../services/api";
 
-// TODO: Unistall jspdfMod, h2cMod;
 function DropDownContainer({
 	toggleOpen,
 	feedbackData,
@@ -88,10 +87,6 @@ function SessionFeedbackDetails({ session }) {
 	const [sessionDetails, setSessionDetails] = useState();
 	const [animReady, setAnimReady] = useState(false);
 
-	// TODO: RM console.logs
-	console.log("SessionFeedbackRow session:", session);
-	console.log("SessionFeedbackRow sessionDetails:", sessionDetails);
-
 	// smooth height transition
 	const panelRef = useRef(null);
 	const printRef = useRef(null);
@@ -115,9 +110,9 @@ function SessionFeedbackDetails({ session }) {
 
 	// Build FeedbackReport data once we have the detailed session
 	const feedbackData = useMemo(() => {
-		const fb = sessionDetails?.feedback ?? null;
-		if (!fb) return null;
-		return convertDbFeedbackToDisplay(fb);
+		const sessionFeedback = sessionDetails?.feedback ?? null;
+		if (!sessionFeedback) return null;
+		return sessionFeedback;
 	}, [sessionDetails]);
 
 	const meta = useMemo(() => {
