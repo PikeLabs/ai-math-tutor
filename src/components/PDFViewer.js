@@ -209,7 +209,7 @@ export default function PDFViewer() {
 	} = useAppContext();
 
 	const [uploadedFile, setUploadedFile] = useState(null);
-	const [uploadedFileName, setUploadedFileName] = useState("");
+	// const [uploadedFileName, setUploadedFileName] = useState("");
 	const [numPages, setNumPages] = useState(null);
 	const [pageNumber, setPageNumber] = useState(1);
 	const [scale, setScale] = useState(1.0);
@@ -287,7 +287,7 @@ export default function PDFViewer() {
 
 		// Optimistically set UI; if upload fails we'll reset
 		setUploadedFile(file);
-		setUploadedFileName(file.name);
+		// setUploadedFileName(file.name);
 		setLoading(true);
 		setError(null);
 		setNumPages(null);
@@ -317,7 +317,7 @@ export default function PDFViewer() {
 
 			// revert optimistic UI so user can pick again
 			setUploadedFile(null);
-			setUploadedFileName("");
+			// setUploadedFileName("");
 			setNumPages(null);
 			setPageNumber(1);
 		} finally {

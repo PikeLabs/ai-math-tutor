@@ -84,7 +84,7 @@ function SessionFeedbackDetails({ session }) {
 	const [isLoading, setIsLoading] = useState(false);
 	const [toggleOpen, setToggleOpen] = useState(false);
 	const [err, setErr] = useState("");
-	const [sessionDetails, setSessionDetails] = useState();
+	const [sessionDetails, setSessionDetails] = useState(undefined);
 	const [animReady, setAnimReady] = useState(false);
 
 	// smooth height transition
@@ -133,15 +133,20 @@ function SessionFeedbackDetails({ session }) {
 
 	useEffect(() => {
 		let alive = true;
-		if (!toggleOpen || !!sessionDetails?.feedback) return;
+		if (!toggleOpen) return;
+		if (sessionDetails !== undefined) return;
+
 		setIsLoading(true);
 		(async () => {
 			setErr("");
 			try {
 				const data = await getProfessorSession(session.id);
-				if (alive) setSessionDetails(data);
+				if (!alive) return;
+				setSessionDetails(data ?? null);
 			} catch (e) {
-				if (alive) setErr(e?.message || "Failed to load feedback");
+				if (!alive) return;
+				setErr(e?.message || "Failed to load feedback");
+				setSessionDetails(null);
 			} finally {
 				if (alive) setIsLoading(false);
 			}
