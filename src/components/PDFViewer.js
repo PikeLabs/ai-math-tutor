@@ -29,14 +29,17 @@ function RecordingBar({
 	const onContinueRef = useRef(onContinue);
 	const hasFiredEndRef = useRef(false); // local one-shot guard
 
+	const inQA = !!(interventionState === INTERVENTION_STATES.questioning);
+	const isFinished = !!(
+		interventionState === INTERVENTION_STATES.final_complete
+	);
+
 	useEffect(() => {
 		onContinueRef.current = onContinue;
 	}, [onContinue]);
 
 	// Start/stop the local countdown when in Q&A and answer window is active.
 	useEffect(() => {
-		const inQA = interventionState === INTERVENTION_STATES.questioning;
-
 		if (inQA && answerActive) {
 			// reset any prior
 			if (answerTimerRef.current) {
@@ -77,7 +80,7 @@ function RecordingBar({
 				answerTimerRef.current = null;
 			}
 		};
-	}, [interventionState, answerActive, answerSecondsDefault]);
+	}, [inQA, answerActive, answerSecondsDefault]);
 
 	// ----- Recording status row -----
 	const textStyles = "text-md font-medium";
@@ -107,11 +110,13 @@ function RecordingBar({
 				</span>
 			</>
 		);
+	} else if (isFinished) {
+		statusRow = null;
 	}
 
 	let countdownTimerContent = null;
 	if (
-		interventionState === INTERVENTION_STATES.questioning &&
+		inQA &&
 		answerActive &&
 		isRecording &&
 		!isPaused
@@ -452,7 +457,7 @@ export default function PDFViewer() {
 
 			<div className="pdf-controls">
 				<div className="file-upload-section">
-					{!uploadedFile ? (
+					{!uploadedFile && (
 						<div className="upload-container">
 							<label
 								htmlFor="pdf-upload"
@@ -468,25 +473,6 @@ export default function PDFViewer() {
 							</label>
 							<input
 								id="pdf-upload"
-								type="file"
-								accept="application/pdf"
-								onChange={handleFileUpload}
-								className="file-input"
-								style={{ display: "none" }}
-							/>
-						</div>
-					) : (
-						<div className="uploaded-file-info">
-							<span className="file-name">📄 {uploadedFileName}</span>
-							<label
-								htmlFor="pdf-replace"
-								className="replace-file-btn"
-							>
-								Replace File
-							</label>
-							<input
-								id="pdf-replace"
-								ref={replaceInputRef}
 								type="file"
 								accept="application/pdf"
 								onChange={handleFileUpload}

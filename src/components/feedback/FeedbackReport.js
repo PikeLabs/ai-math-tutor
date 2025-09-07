@@ -187,7 +187,7 @@ function FeedbackReportDetail({
 
 			{/* Feedback Column */}
 			{/* TODO: Why do I need ColumnHeader here?!?! */}
-			<td className={tableDataClass}>
+			<td className={`${tableDataClass} no-print`}>
 				<ColumnHeader title="Learning Objectives" />
 				<FeedbackContainer feedback={feedback} />
 			</td>
@@ -343,7 +343,7 @@ export default function FeedbackReport({ feedback }) {
 							<th className="px-4 py-3 text-center font-semibold text-slate-600">
 								Learning Objectives Feedback
 							</th>
-							<th className="px-4 py-3 text-center font-semibold text-slate-600 w-[220px]">
+							<th className="px-4 py-3 text-center font-semibold text-slate-600 w-[220px] no-print">
 								Audio
 							</th>
 						</tr>

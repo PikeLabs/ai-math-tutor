@@ -39,7 +39,7 @@ export default function AppProvider({ children, sessionId }) {
 	const [currentRecordingSegment, setCurrentRecordingSegment] = useState(null);
 
 	// Intervention state — SINGLE SOURCE OF TRUTH:
-	// 'student_presenting' | 'ai_questioning' | 'questions_batch_complete' | 'final_complete'
+	// 'student_presenting', 'ai_questioning', 'questions_batch_complete', 'final_complete', 'inactive'
 	const [interventionState, setInterventionState] = useState(
 		INTERVENTION_STATES.inactive
 	);
@@ -233,7 +233,7 @@ export default function AppProvider({ children, sessionId }) {
 			// optional debug
 			console.log("[pause] skipped — no active recorder");
 		}
-	}, [isRecording, mediaRecorder, recordingTimer]);
+	}, [mediaRecorder, recordingTimer]);
 
 	const resumeRecording = useCallback(() => {
 		if (isPaused && mediaRecorder && mediaRecorder.state === "paused") {
