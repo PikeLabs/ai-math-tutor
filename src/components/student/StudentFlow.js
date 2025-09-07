@@ -1,7 +1,7 @@
 import InstructionsModal from "../modal/InstructionsModal";
 import PDFViewer from "../PDFViewer";
 import ChatApp from "../ChatApp";
-import { useSession } from "../../contexts/SessionContext";
+import { useSession } from "../../hooks/useSession";
 
 export default function StudentFlow() {
 	const { hasSeenInstructions, markInstructionsSeen } = useSession();

@@ -1,12 +1,15 @@
-import os
-import tempfile
-import json
-import time
-import uuid
-import shutil
-from flask import url_for
+import os, tempfile, json, time, uuid, shutil
 from openai import OpenAI
 
+from services.database_service import upsert_slide_asset
+from utils.workers import with_retry
+from lib.aws import (
+    upload_file,
+    build_key,
+    build_s3_filename,
+    S3_AUDIO_SESSIONS_FOLDER,
+)
+from services.pdf_image_service import cleanup_local_pdf_images
 from config.paths import AUDIO_SESSIONS_DIR
 
 # Try to import pydub, fallback if not available
@@ -28,7 +31,7 @@ CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-5")
 if not AI_API_KEY:
     raise ValueError("OPENAI_API_KEY not found in environment variables")
 
-client = OpenAI(api_key=AI_API_KEY, timeout=20.0)
+client = OpenAI(api_key=AI_API_KEY, timeout=60.0)
 
 
 ##### Helper functions #####
@@ -121,9 +124,14 @@ def transcribe_recording(audio_file_path):
     """
     try:
         with open(audio_file_path, "rb") as f:
-            transcript = client.audio.transcriptions.create(
-                model=TRANSCRIBE_MODEL, file=f, response_format="text"
-            )
+
+            def _call():
+                return client.audio.transcriptions.create(
+                    model=TRANSCRIBE_MODEL, file=f, response_format="text"
+                )
+
+            transcript = with_retry(_call)
+
         return transcript
     except Exception as e:
         raise Exception(f"Recording transcription error: {str(e)}")
@@ -131,7 +139,7 @@ def transcribe_recording(audio_file_path):
 
 def save_audio_segments(session_id, audio_segments):
     """
-    Save audio segments to session directory
+    Save audio segments to session directory and upload to S3 bucket.
 
     Args:
         session_id: Unique session identifier
@@ -142,7 +150,7 @@ def save_audio_segments(session_id, audio_segments):
     """
     try:
         _ensure_audio_directories()
-        # Get absolute path to the backend directory
+
         session_dir = os.path.join(AUDIO_SESSIONS_DIR, session_id)
         os.makedirs(session_dir, exist_ok=True)
 
@@ -153,11 +161,42 @@ def save_audio_segments(session_id, audio_segments):
             temp_audio_path = segment["audio_path"]
 
             # Copy to session directory with permanent name
+            session_dir = os.path.join(AUDIO_SESSIONS_DIR, session_id)
+            os.makedirs(session_dir, exist_ok=True)
             permanent_path = os.path.join(session_dir, f"slide_{slide_number}.wav")
             shutil.copy2(temp_audio_path, permanent_path)
 
-            saved_segments[slide_number] = permanent_path
-            print(f"💾 Saved audio segment for slide {slide_number}")
+            try:
+                audio_filename = build_s3_filename(slide_number, "audio")
+                s3_key = build_key(
+                    session_id,
+                    audio_filename,
+                    subdir=S3_AUDIO_SESSIONS_FOLDER,
+                )
+
+                upload_file(permanent_path, s3_key, content_type="audio/wav")
+                upsert_slide_asset(
+                    session_id=session_id,
+                    slide_number=slide_number,
+                    kind="audio",
+                    s3_key=s3_key,
+                    mime_type="audio/wav",
+                    duration_ms=None,
+                )
+
+            except Exception as e:
+                print(f"⚠️ Failed to upload audio segment {permanent_path} to S3: {e}")
+
+            # Remove local copy
+            try:
+                if os.path.exists(permanent_path):
+                    os.remove(permanent_path)
+            except Exception as e:
+                print(f"⚠️ Failed to delete local audio segment {permanent_path}: {e}")
+
+            saved_segments[slide_number] = {
+                "local_path": permanent_path,
+            }
 
         # Save session metadata
         metadata = {
@@ -176,19 +215,6 @@ def save_audio_segments(session_id, audio_segments):
     except Exception as e:
         print(f"❌ Error saving audio segments: {e}")
         return {}
-
-
-def get_audio_segment_path(session_id, slide_number):
-    """Get the file path for a specific slide's audio segment"""
-    # Get absolute path to the backend directory
-    session_dir = os.path.join(AUDIO_SESSIONS_DIR, session_id)
-    audio_file = f"slide_{slide_number}.wav"
-    audio_path = os.path.join(session_dir, audio_file)
-
-    if os.path.exists(audio_path):
-        return audio_path
-
-    return None
 
 
 def cleanup_session_audio(session_id):
@@ -323,7 +349,6 @@ def generate_feedback(
     slide_content=None,
     presentation_recording=None,
     slide_timestamps=None,
-    assignment_filename=None,
     pdf_session_id=None,
     pdf_slide_count=None,
     qa_timestamps=None,
@@ -346,25 +371,12 @@ def generate_feedback(
     """
 
     try:
-        print("📝 Generating slide-specific feedback...")
-        print(f"💬 Conversation messages: {len(conversation_history)}")
-        print(
-            f"💬 First few messages: {conversation_history[:3] if conversation_history else 'None'}"
-        )
-        print(f"📄 Slide content provided: {bool(slide_content)}")
-        print(f"🎙️ Presentation recording provided: {bool(presentation_recording)}")
-        print(
-            f"📊 Slide timestamps provided: {len(slide_timestamps) if slide_timestamps else 0}"
-        )
         if slide_timestamps:
-            print(f"📊 Detailed timestamps: {slide_timestamps}")
             # Analyze timestamp data for issues
             for i, ts in enumerate(slide_timestamps):
                 print(
                     f"  - Timestamp {i}: Slide {ts.get('slideNumber', '?')}, Time: {ts.get('timestamp', '?')}s"
                 )
-        print(f"📄 PDF session ID: {pdf_session_id}")
-        print(f"📄 PDF slide count: {pdf_slide_count}")
 
         # Handle audio splitting and transcription if recording is provided
         slide_audio_transcripts = {}
@@ -432,9 +444,6 @@ def generate_feedback(
                                 "end_time": segment["end_time"],
                             }
                             temp_files_to_cleanup.append(segment["audio_path"])
-                            print(
-                                f"✅ Slide {segment['slideNumber']} transcribed: {len(transcript)} chars"
-                            )
                         except Exception as e:
                             print(
                                 f"❌ Failed to transcribe slide {segment['slideNumber']}: {e}"
@@ -445,9 +454,6 @@ def generate_feedback(
                                 "end_time": segment["end_time"],
                             }
                 else:
-                    print(
-                        "⚠️ Audio splitting returned only one segment, treating as full audio"
-                    )
                     # Create fake segments based on timestamps for feedback structure
                     if slide_timestamps and len(slide_timestamps) > 1:
                         full_transcript = transcribe_recording(temp_audio_path)
@@ -512,7 +518,6 @@ def generate_feedback(
                     "start_time": 0,
                     "end_time": None,
                 }
-                print(f"✅ Full audio transcribed: {len(full_transcript)} chars")
             except Exception as e:
                 print(f"❌ Full audio transcription failed: {e}")
 
@@ -522,15 +527,19 @@ def generate_feedback(
                 print(f"🎤 Processing {len(qa_timestamps)} QA timestamp windows")
                 if AUDIO_PROCESSING_AVAILABLE and AudioSegment is not None:
                     qa_src = AudioSegment.from_file(full_audio_temp_path)
+
                     for idx, rng in enumerate(qa_timestamps):
                         # Expect {start: seconds, end: seconds}
                         start_s = float(rng.get("start", 0) or 0)
                         end_s = float(rng.get("end", 0) or 0)
+
                         if end_s <= start_s:
                             continue
+
                         start_ms = max(0, int(start_s * 1000))
                         end_ms = min(len(qa_src), int(end_s * 1000))
                         clip = qa_src[start_ms:end_ms]
+
                         with tempfile.NamedTemporaryFile(
                             delete=False, suffix=f".qa{idx}.wav"
                         ) as tmp:
@@ -541,6 +550,7 @@ def generate_feedback(
                             except Exception as te:
                                 print(f"⚠️ QA seg {idx} transcription failed: {te}")
                                 tx = ""
+
                         qa_audio_transcripts.append(
                             {
                                 "start_time": start_s,
@@ -657,13 +667,6 @@ def generate_feedback(
                     )
 
             # Add Q&A section analysis if we detected Q&A or have conversation history
-            print(f"🔍 Q&A Generation Check:")
-            print(f"  - Has conversation history: {bool(conversation_history)}")
-            print(
-                f"  - Conversation length: {len(conversation_history) if conversation_history else 0}"
-            )
-            print(f"  - Has Q&A section detected: {has_qa_section}")
-
             if conversation_history and (
                 has_qa_section or len(conversation_history) > 2
             ):
@@ -672,7 +675,6 @@ def generate_feedback(
                     conversation_history, qa_segments=qa_audio_transcripts
                 )
                 feedback_parts.append(qa_feedback)
-                print(f"✅ Q&A feedback added to parts")
             else:
                 print(f"⚠️ Skipping Q&A feedback generation")
 
@@ -689,12 +691,6 @@ def generate_feedback(
                 feedback_parts.append(feedback_part)
 
             # Add Q&A section analysis
-            print(f"🔍 Q&A Generation Check (branch 2):")
-            print(f"  - Has conversation history: {bool(conversation_history)}")
-            print(
-                f"  - Conversation length: {len(conversation_history) if conversation_history else 0}"
-            )
-
             if conversation_history:
                 print(f"✅ Generating Q&A feedback...")
                 qa_feedback = generate_qa_feedback(
@@ -724,12 +720,6 @@ def generate_feedback(
             feedback_parts.append(feedback_part)
 
             # Add Q&A section analysis
-            print(f"🔍 Q&A Generation Check (branch 2):")
-            print(f"  - Has conversation history: {bool(conversation_history)}")
-            print(
-                f"  - Conversation length: {len(conversation_history) if conversation_history else 0}"
-            )
-
             if conversation_history:
                 print(f"✅ Generating Q&A feedback...")
                 qa_feedback = generate_qa_feedback(
@@ -741,45 +731,22 @@ def generate_feedback(
                 print(f"⚠️ No conversation history for Q&A feedback")
 
         # Use PDF session ID for images, generate new session ID for audio
-        # feedback_session_id = str(uuid.uuid4())
         feedback_session_id = asset_session_id or str(uuid.uuid4())
-        image_session_id = pdf_session_id or feedback_session_id
-
-        print(f"📊 Session IDs:")
-        print(f"  - Feedback session (audio): {feedback_session_id}")
-        print(f"  - Image session (PDF): {image_session_id}")
+        image_session_id = pdf_session_id or asset_session_id or feedback_session_id
 
         # Save audio segments if we have them
         audio_session_data = {}
-        print(
-            f"🔧 DEBUG: slide_audio_transcripts length: {len(slide_audio_transcripts) if slide_audio_transcripts else 0}"
-        )
-        print(
-            f"🔧 DEBUG: original_audio_segments length: {len(original_audio_segments) if original_audio_segments else 0}"
-        )
 
         if slide_audio_transcripts and original_audio_segments:
             # Save the split audio segments to permanent storage
-            print(
-                f"🔧 DEBUG: About to save {len(original_audio_segments)} audio segments"
-            )
             audio_session_data = save_audio_segments(
                 feedback_session_id, original_audio_segments
             )
-            print(f"💾 Saved audio segments for session {feedback_session_id}")
-            print(f"💾 Audio saved for slides: {list(audio_session_data.keys())}")
         elif slide_audio_transcripts:
             print("⚠️ Audio transcripts available but no segments to save")
             print(f"🔧 DEBUG: Transcript keys: {list(slide_audio_transcripts.keys())}")
         else:
             print("❌ No audio transcripts or segments available")
-
-        # Process slide images if we have assignment filename
-        slide_image_data = {}
-        if assignment_filename:
-            # For now, we'll handle this in the app.py when uploading
-            # The frontend will need to call /api/process-upload first
-            pass
 
         # Structure the response data
         structured_feedback = {
@@ -822,6 +789,7 @@ def generate_feedback(
         # Process individual slide feedback
         for i, feedback_text in enumerate(slide_feedback_texts):
             slide_num = i + 1
+
             if slide_timestamps_only and i < len(slide_timestamps_only):
                 slide_num = slide_timestamps_only[i]["slideNumber"]
 
@@ -834,65 +802,20 @@ def generate_feedback(
 
             # Parse the feedback text to extract individual scores
             parsed_feedback = parse_slide_feedback(feedback_text)
-
-            # Check if audio exists for this slide
-            has_audio = slide_num in audio_session_data
-            # audio_url = (
-            #     f"/api/audio-segment/{feedback_session_id}/{slide_num}"
-            #     if has_audio
-            #     else None
-            # )
-
-            audio_url = (
-                url_for(
-                    "media.get_audio_segment",
-                    session_id=feedback_session_id,
-                    slide_number=slide_num,
-                    _external=False,
-                )
-                if has_audio
-                else None
-            )
-
-            image_url = url_for(
-                "media.get_slide_image",
-                upload_id=image_session_id,
-                slide_number=slide_num,
-                type="thumbnail",
-                _external=False,
-            )
-
-            image_url_full = url_for(
-                "media.get_slide_image",
-                upload_id=image_session_id,
-                slide_number=slide_num,
-                type="full",
-                _external=False,
-            )
-
-            print(f"📊 Building slide {slide_num} data:")
-            print(f"  - Has audio: {has_audio}")
-            print(
-                f"  - Audio saved at: {audio_session_data.get(slide_num, 'Not saved')}"
-            )
-            print(f"  - Audio URL: {audio_url}")
-            print(
-                f"  - Image URL: /api/slide-image/{image_session_id}/{slide_num}?type=thumbnail"
-            )
-            print(f"  - Image session: {image_session_id}")
-            print(f"  - Audio session: {feedback_session_id}")
-            print(f"  - Image Url: {image_url}")
-            print(f"  - Image Url Full: {image_url_full}")
+            # image_urls = get_presigned_slide_urls(image_session_id, slide_num)
+            # audio_urls = get_presigned_slide_urls(feedback_session_id, slide_num)
+            # image_url = image_urls["thumb"]
+            # image_url_full = image_urls["full"]
+            # audio_url = audio_urls["audio"]
 
             slide_data = {
                 "slide_number": slide_num,
-                "image_url": image_url,
-                "image_url_full": image_url_full,
-                "audio_url": audio_url,
+                # "image_url": image_url,
+                # "image_url_full": image_url_full,
+                # "audio_url": audio_url,
                 "feedback": parsed_feedback,
                 "raw_feedback_text": feedback_text,
             }
-
             structured_feedback["slides"].append(slide_data)
 
         # Add Q&A feedback if available
@@ -910,9 +833,16 @@ def generate_feedback(
             except Exception as e:
                 print(f"⚠️ Failed to cleanup {temp_file}: {e}")
 
-        print(
-            f"✅ Structured feedback generated for {len(structured_feedback['slides'])} slides"
-        )
+        # Cleanup the original PDF file(s) from local storage
+        try:
+            if pdf_session_id:
+                cleanup_local_pdf_images(pdf_session_id)
+                print(f"🗑️ Cleaned up local PDF(s) for session {pdf_session_id}")
+            else:
+                print(f"⚠️ No PDF session ID provided, skipping PDF cleanup")
+        except Exception as e:
+            print(f"⚠️ Failed to cleanup local PDF(s) for session {pdf_session_id}: {e}")
+
         return structured_feedback
 
     except Exception as e:
@@ -921,7 +851,10 @@ def generate_feedback(
 
 
 def generate_slide_feedback(
-    slide_number, slide_audio_data, slide_content, conversation_history
+    slide_number,
+    slide_audio_data,
+    slide_content,
+    conversation_history,
 ):
     """
     Generate feedback for a specific slide
@@ -974,27 +907,29 @@ For slide feedback, focus ONLY on the slide content and delivery. Q&A aspects ar
             },
         ]
 
-        response = client.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=feedback_messages,
-            max_completion_tokens=400,
-            reasoning_effort="minimal",
-        )
+        def _call():
+            return client.chat.completions.create(
+                model=CHAT_MODEL,
+                messages=feedback_messages,
+                max_completion_tokens=400,
+                reasoning_effort="minimal",
+            )
+
+        response = with_retry(_call)
 
         return response.choices[0].message.content
 
     except Exception as e:
-        print(f"❌ Failed to generate feedback for slide {slide_number}: {e}")
-        print(f"❌ Exception type: {type(e)}")
-        print(f"❌ Slide data: {slide_audio_data}")
-        print(f"❌ Slide content available: {bool(slide_content)}")
         import traceback
 
         traceback.print_exc()
         return f"**Slide {slide_number} Feedback:** Error generating feedback for this slide: {str(e)}"
 
 
-def generate_qa_feedback(conversation_history, qa_segments=None):
+def generate_qa_feedback(
+    conversation_history,
+    qa_segments=None,
+):
     """
     Generate feedback for the Q&A portion focusing on impromptu responses and composure
 
@@ -1054,12 +989,15 @@ def generate_qa_feedback(conversation_history, qa_segments=None):
             },
         ]
 
-        response = client.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=feedback_messages,
-            max_completion_tokens=300,
-            reasoning_effort="minimal",
-        )
+        def _call():
+            return client.chat.completions.create(
+                model=CHAT_MODEL,
+                messages=feedback_messages,
+                max_completion_tokens=300,
+                reasoning_effort="minimal",
+            )
+
+        response = with_retry(_call)
 
         return response.choices[0].message.content
 

@@ -75,9 +75,10 @@ export default function InstructionsModal({ open, onClose }) {
 					<li>2. Start the recording and begin presenting.</li>
 					<li>
 						3. Every few slides, your professor will interrupt with questions.
-						You must answer before you can continue.
+						You'll have up to 30 seconds to answer (or click <em>Continue</em>{" "}
+						to move on).
 					</li>
-					<li>4. At the end, you’ll receive feedback on your presentation.</li>
+					<li>4. At the end, you'll receive feedback on your presentation.</li>
 				</ol>
 				<div className="mt-5 flex justify-end">
 					<button

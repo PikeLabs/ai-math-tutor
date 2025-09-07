@@ -1,15 +1,30 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-
-import FeedbackReport from "../feedback/FeedbackReport";
-import Chevron from "../ui/Chevron";
-import { getProfessorSession } from "../../services/api";
-import { convertDbFeedbackToDisplay, toLocale } from "../../utils";
-import PrintableComponent from "../ui/Print";
 import { useReactToPrint } from "react-to-print";
 
-// TODO: Unistall jspdfMod, h2cMod;
-function DropDownContainer({ toggleOpen, feedbackData, error, onPrint, ref }) {
+import FeedbackReport from "../feedback/FeedbackReport";
+import PrintWrapper from "../ui/PrintWrapper";
+import Chevron from "../ui/Chevron";
+import { toLocale } from "../../utils";
+import { getProfessorSession } from "../../services/api";
+
+function DropDownContainer({
+	toggleOpen,
+	feedbackData,
+	error,
+	onPrint,
+	printRef,
+	isLoading,
+}) {
 	if (!toggleOpen) return null;
+
+	if (isLoading) {
+		return (
+			<div className="flex items-center justify-center py-6 text-gray-500 text-sm">
+				<div className="animate-spin h-5 w-5 border-2 border-gray-300 border-t-blue-500 rounded-full mr-2"></div>
+				Loading feedback details...
+			</div>
+		);
+	}
 
 	if (error) {
 		return (
@@ -31,9 +46,9 @@ function DropDownContainer({ toggleOpen, feedbackData, error, onPrint, ref }) {
 						🖨️ Print
 					</button>
 				</div>
-				<PrintableComponent ref={ref}>
+				<PrintWrapper ref={printRef}>
 					<FeedbackReport feedback={feedbackData} />
-				</PrintableComponent>
+				</PrintWrapper>
 			</div>
 		);
 	}
@@ -72,19 +87,17 @@ function SessionFeedbackDetails({ session }) {
 	const [sessionDetails, setSessionDetails] = useState();
 	const [animReady, setAnimReady] = useState(false);
 
-	console.log("SessionFeedbackRow session:", session);
-	console.log("SessionFeedbackRow sessionDetails:", sessionDetails);
-
 	// smooth height transition
 	const panelRef = useRef(null);
 	const printRef = useRef(null);
 
 	// // Feedback data for styling consistency???
 	const handlePrintReport = useReactToPrint({
+		contentRef: printRef,
 		content: () => printRef.current,
 		// Optional: add/override print styles
 		pageStyle: `
-		@page { margin: 12mm; }
+		@page { margin: 6mm; }
 		@media print {
 			body { background: #fff; }
 			nav, .chat-panel, .pagination, .no-print { display: none !important; }
@@ -97,9 +110,9 @@ function SessionFeedbackDetails({ session }) {
 
 	// Build FeedbackReport data once we have the detailed session
 	const feedbackData = useMemo(() => {
-		const fb = sessionDetails?.feedback ?? null;
-		if (!fb) return null;
-		return convertDbFeedbackToDisplay(fb);
+		const sessionFeedback = sessionDetails?.feedback ?? null;
+		if (!sessionFeedback) return null;
+		return sessionFeedback;
 	}, [sessionDetails]);
 
 	const meta = useMemo(() => {
@@ -107,8 +120,7 @@ function SessionFeedbackDetails({ session }) {
 		const completed = session?.completedAt
 			? toLocale(session.completedAt)
 			: "—";
-		const presentationScore =
-			session?.feedback?.presentationScore ?? "—";
+		const presentationScore = session?.feedback?.presentationScore ?? "—";
 		return { created, completed, presentationScore };
 	}, [session]);
 
@@ -122,7 +134,7 @@ function SessionFeedbackDetails({ session }) {
 	useEffect(() => {
 		let alive = true;
 		if (!toggleOpen || !!sessionDetails?.feedback) return;
-
+		setIsLoading(true);
 		(async () => {
 			setErr("");
 			try {
@@ -130,6 +142,8 @@ function SessionFeedbackDetails({ session }) {
 				if (alive) setSessionDetails(data);
 			} catch (e) {
 				if (alive) setErr(e?.message || "Failed to load feedback");
+			} finally {
+				if (alive) setIsLoading(false);
 			}
 		})();
 
@@ -190,7 +204,8 @@ function SessionFeedbackDetails({ session }) {
 								feedbackData={feedbackData}
 								error={err}
 								onPrint={handlePrintReport}
-								ref={printRef}
+								printRef={printRef}
+								isLoading={isLoading}
 							/>
 						</div>
 					</div>

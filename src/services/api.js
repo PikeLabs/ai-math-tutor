@@ -426,33 +426,7 @@ export const postPdfForSlides = async (formdata) => {
 	return data;
 };
 
-// TODO: Pass in the currentPDFSession/currentPDFUploadId
-export const deleteSessionPdf = async (sessionId, previousUploadId) => {
-	const r = await fetch(ENDPOINTS.uploads.deleteSessionPdf(sessionId), {
-		method: "DELETE",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ previousUploadId }),
-	});
-
-	let data;
-	try {
-		data = await r.json();
-	} catch {
-		const text = await r.text().catch(() => "");
-		const errMsg = text || r.statusText || "Unknown error";
-		throw new Error(`Delete Session PDF failed: ${errMsg}`);
-	}
-
-	if (!r.ok) {
-		const errMsg = data?.error || r.statusText || "Unknown error";
-		throw new Error(`Delete Session PDF failed: ${errMsg}`);
-	}
-
-	return data;
-};
-
 // --- Slides ---
-// TODO: Update to return JSON.
 export const postAssignmentSlides = async (assignment, { start, end }) => {
 	const r = await fetch(ENDPOINTS.assignments.slides(assignment), {
 		method: "POST",
@@ -480,6 +454,7 @@ export const postAssignmentSlides = async (assignment, { start, end }) => {
 	return data;
 };
 
+// TODO: This is unused
 export async function getSessionFeedback(sessionId) {
 	const r = await fetch(`${ENDPOINTS.professor.session(sessionId)}`, {
 		method: "GET",
@@ -503,4 +478,28 @@ export async function getSessionFeedback(sessionId) {
 	}
 
 	return data?.feedback?.structured || data?.feedback || data;
+}
+
+export async function getStudentFeedback(sessionId) {
+	const r = await fetch(`${ENDPOINTS.feedback.get(sessionId)}`, {
+		credentials: "include",
+		headers: { Accept: "application/json" },
+		cache: "no-store",
+	});
+
+	let data;
+	try {
+		data = await r.json();
+	} catch {
+		const text = await r.text().catch(() => "");
+		const errMsg = text || r.statusText || "Unknown error";
+		throw new Error(`Get Student Feedback failed: ${errMsg}`);
+	}
+
+	if (!r.ok) {
+		const errMsg = data?.error || r.statusText || "Unknown error";
+		throw new Error(`Get Student Feedback failed: ${errMsg}`);
+	}
+
+	return data;
 }

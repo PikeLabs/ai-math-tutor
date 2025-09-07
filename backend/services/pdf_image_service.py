@@ -1,7 +1,5 @@
-import os
-import io
-import subprocess
-from config.paths import SLIDE_IMAGES_DIR
+import os, glob, io, subprocess
+from config.paths import SLIDE_IMAGES_DIR, ASSIGNMENTS_DIR
 
 
 # Check if PDF processing is available
@@ -24,60 +22,9 @@ except ImportError as e:
     convert_from_path = None
     Image = None
 
-MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 
 def ensure_directories():
     os.makedirs(SLIDE_IMAGES_DIR, exist_ok=True)
-
-
-def get_pdf_slide_image(pdf_path, slide_number, thumbnail_size=(300, 200)):
-    """
-    Extract a specific slide from PDF as image
-
-    Args:
-        pdf_path: Path to the PDF file
-        slide_number: Slide number (1-indexed)
-        thumbnail_size: Tuple of (width, height) for thumbnail
-
-    Returns:
-        Tuple of (thumbnail_bytes, full_size_bytes) or (None, None) if error
-    """
-    try:
-        print(f"📄 Extracting slide {slide_number} from {pdf_path}")
-
-        if convert_from_path is None or Image is None:
-            print("⚠️ PDF processing libraries not available")
-            return None, None
-
-        # Convert specific page to image
-        images = convert_from_path(
-            pdf_path,
-            first_page=slide_number,
-            last_page=slide_number,
-            dpi=150,  # Good quality for display
-        )
-
-        if not images:
-            print(f"❌ No image found for slide {slide_number}")
-            return None, None
-
-        slide_image = images[0]
-
-        # Create thumbnail
-        thumbnail = slide_image.copy()
-        thumbnail.thumbnail(thumbnail_size, Image.Resampling.LANCZOS)
-
-        # Convert to bytes
-        full_size_bytes = image_to_bytes(slide_image)
-        thumbnail_bytes = image_to_bytes(thumbnail)
-
-        print(f"✅ Successfully extracted slide {slide_number}")
-        return thumbnail_bytes, full_size_bytes
-
-    except Exception as e:
-        print(f"❌ Error extracting slide {slide_number}: {e}")
-        return None, None
 
 
 def image_to_bytes(image, format="PNG"):
@@ -87,13 +34,13 @@ def image_to_bytes(image, format="PNG"):
     return img_byte_arr.getvalue()
 
 
-def save_slide_images(pdf_path, upload_id):
+def save_slide_images(pdf_path, session_id):
     """
     Extract all slides from PDF and save them for a session
 
     Args:
         pdf_path: Path to the PDF file
-        upload_id: Unique identifier for the current upload
+        session_id: Unique identifier for the current upload
 
     Returns:
         Dictionary mapping slide numbers to image paths
@@ -120,7 +67,7 @@ def save_slide_images(pdf_path, upload_id):
 
         ensure_directories()
         # Get absolute path to the backend directory
-        slides_dir = os.path.join(SLIDE_IMAGES_DIR, upload_id)
+        slides_dir = os.path.join(SLIDE_IMAGES_DIR, session_id)
         os.makedirs(slides_dir, exist_ok=True)
         print(f"📁 Session directory created: {slides_dir}")
 
@@ -185,45 +132,20 @@ def save_slide_images(pdf_path, upload_id):
         return {}
 
 
-def get_slide_image_path(upload_id, slide_number, image_type="thumbnail"):
-    """
-    Get the file path for a specific slide image
-
-    Args:
-        upload_id: artifact namespace id for this PDF upload
-        slide_number: Slide number (1-indexed)
-        image_type: 'thumbnail' or 'full'
-
-    Returns:
-        File path or None if not found
-    """
-    # Get absolute path to the backend directory
-    backend_dir = os.path.dirname(os.path.abspath(__file__))
-    slide_dir = os.path.join(SLIDE_IMAGES_DIR, upload_id)
-    # Map 'thumbnail' to 'thumb' for backward compatibility
-    file_type = "thumb" if image_type == "thumbnail" else image_type
-    image_file = f"slide_{slide_number}_{file_type}.png"
-    image_path = os.path.join(slide_dir, image_file)
-
-    if os.path.exists(image_path):
-        return image_path
-
-    return None
-
-
-def cleanup_session_images(upload_id):
+# TODO: Rename to cleanup_session_slide_images
+def cleanup_session_slide_images(session_id: str) -> None:
     """Remove all images for a specific upload/session id."""
     try:
-        slide_dir = os.path.join(SLIDE_IMAGES_DIR, upload_id)
+        slide_dir = os.path.join(SLIDE_IMAGES_DIR, session_id)
         if os.path.exists(slide_dir):
             import shutil
 
             shutil.rmtree(slide_dir)
-            print(f"🗑️ Cleaned up images for upload {upload_id}")
+            print(f"🗑️ Cleaned up images for session {session_id}")
         else:
-            print(f"ℹ️ No slide images found for upload {upload_id} at {slide_dir}")
+            print(f"ℹ️ No slide images found for session {session_id} at {slide_dir}")
     except Exception as e:
-        print(f"⚠️ Error cleaning up images for upload {upload_id}: {e}")
+        print(f"⚠️ Error cleaning up images for session {session_id}: {e}")
 
 
 def cleanup_old_sessions(max_age_hours=24):
@@ -243,7 +165,20 @@ def cleanup_old_sessions(max_age_hours=24):
                 # Check creation time
                 creation_time = os.path.getctime(slides_path)
                 if creation_time < cutoff_time:
-                    cleanup_session_images(slides_dir)
+                    cleanup_session_slide_images(slides_dir)
 
     except Exception as e:
         print(f"⚠️ Error during cleanup: {e}")
+
+
+def cleanup_local_pdf_images(session_id: str):
+    """
+    Our saved PDF name pattern: uploaded_{session_id}_{originalName}.pdf
+    We remove any that match this processing id.
+    """
+    pattern = os.path.join(ASSIGNMENTS_DIR, f"uploaded_{session_id}_*.pdf")
+    for path in glob.glob(pattern):
+        try:
+            os.remove(path)
+        except Exception as e:
+            print(f"⚠️ Failed to remove local PDF {path}: {e}")

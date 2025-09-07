@@ -2,7 +2,11 @@ from flask import jsonify
 
 
 def bad_request(msg: str, status: int = 400):
-    return jsonify({"error": msg}), 400
+    return jsonify({"error": msg}), status
+
+
+def unauthorized(msg: str = "Unauthorized"):
+    return jsonify({"error": msg}), 401
 
 
 def not_found(msg: str = "Not found"):

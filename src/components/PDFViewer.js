@@ -6,17 +6,85 @@ import "react-pdf/dist/Page/TextLayer.css";
 import RecordPromptModal from "./modal/RecordPromptModal";
 import { PausedIcon, RecordingIcon } from "./ui/RecordingIcon";
 import { postPdfForSlides } from "../services/api";
-import { useAppContext } from "../contexts/AppContext";
-import { useSession } from "../contexts/SessionContext";
-import { formatTime } from "../utils/recording.utils";
+import { useAppContext } from "../hooks/useAppContext";
+import { useSession } from "../hooks/useSession";
+import { formatTime } from "../utils";
+import { INTERVENTION_STATES } from "../constants";
 
 // Use the local worker from public directory
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
 const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10MB; adjust if needed
 
-function RecordingStatus({ isRecording, isPaused, recordingTime }) {
+function RecordingBar({
+	isRecording,
+	isPaused,
+	recordingTime,
+	interventionState,
+	answerActive,
+	answerSecondsDefault,
+	onContinue,
+}) {
+	const [answerSecondsLeft, setAnswerSecondsLeft] = useState(0);
+	const answerTimerRef = useRef(null);
+	const onContinueRef = useRef(onContinue);
+	const hasFiredEndRef = useRef(false); // local one-shot guard
+
+	const inQA = !!(interventionState === INTERVENTION_STATES.questioning);
+	const isFinished = !!(
+		interventionState === INTERVENTION_STATES.final_complete
+	);
+
+	useEffect(() => {
+		onContinueRef.current = onContinue;
+	}, [onContinue]);
+
+	// Start/stop the local countdown when in Q&A and answer window is active.
+	useEffect(() => {
+		if (inQA && answerActive) {
+			// reset any prior
+			if (answerTimerRef.current) {
+				clearInterval(answerTimerRef.current);
+				answerTimerRef.current = null;
+			}
+
+			hasFiredEndRef.current = false;
+			setAnswerSecondsLeft(answerSecondsDefault || 30);
+
+			answerTimerRef.current = setInterval(() => {
+				setAnswerSecondsLeft((prev) => {
+					if (prev <= 1) {
+						clearInterval(answerTimerRef.current);
+						answerTimerRef.current = null;
+
+						// behaves like clicking Continue
+						if (!hasFiredEndRef.current) {
+							hasFiredEndRef.current = true;
+							onContinueRef.current?.("timeout");
+						}
+
+						return 0;
+					}
+					return prev - 1;
+				});
+			}, 1000);
+		} else {
+			if (answerTimerRef.current) {
+				clearInterval(answerTimerRef.current);
+				answerTimerRef.current = null;
+			}
+			setAnswerSecondsLeft(0);
+		}
+		return () => {
+			if (answerTimerRef.current) {
+				clearInterval(answerTimerRef.current);
+				answerTimerRef.current = null;
+			}
+		};
+	}, [inQA, answerActive, answerSecondsDefault]);
+
+	// ----- Recording status row -----
 	const textStyles = "text-md font-medium";
-	let recordingStatus = (
+	let statusRow = (
 		<div className={`${textStyles} text-gray-500`}>Waiting to start...</div>
 	);
 	let formattedTime =
@@ -24,7 +92,7 @@ function RecordingStatus({ isRecording, isPaused, recordingTime }) {
 
 	// Paused status
 	if (isPaused) {
-		recordingStatus = (
+		statusRow = (
 			<>
 				{/* <div className={`${textStyles} text-white`}>Recording Paused</div> */}
 				<PausedIcon />
@@ -34,7 +102,7 @@ function RecordingStatus({ isRecording, isPaused, recordingTime }) {
 			</>
 		);
 	} else if (isRecording) {
-		recordingStatus = (
+		statusRow = (
 			<>
 				<RecordingIcon />
 				<span className="ml-3 text-md font-medium text-red-600">
@@ -42,11 +110,51 @@ function RecordingStatus({ isRecording, isPaused, recordingTime }) {
 				</span>
 			</>
 		);
+	} else if (isFinished) {
+		statusRow = null;
+	}
+
+	let countdownTimerContent = null;
+	if (
+		inQA &&
+		answerActive &&
+		isRecording &&
+		!isPaused
+	) {
+		const timeLeft = formatTime(answerSecondsLeft);
+		const handleOnContinue = () => {
+			// one-shot: cancel timer and fire once
+			if (answerTimerRef.current) {
+				clearInterval(answerTimerRef.current);
+				answerTimerRef.current = null;
+			}
+
+			if (!hasFiredEndRef.current) {
+				hasFiredEndRef.current = true;
+				onContinueRef.current?.("continue");
+			}
+		};
+
+		countdownTimerContent = (
+			<div className="flex items-center justify-center gap-3">
+				<div className="px-3 py-1 rounded bg-yellow-100 text-yellow-800 font-semibold">
+					Time left: {timeLeft}
+				</div>
+				<button
+					onClick={handleOnContinue}
+					className="control-btn"
+					title="Finish answer and continue"
+				>
+					Continue
+				</button>
+			</div>
+		);
 	}
 
 	return (
-		<div className="w-full flex items-center justify-center py-3">
-			{recordingStatus}
+		<div className="w-full flex flex-col items-center justify-center py-3 gap-2">
+			<div className="flex items-center">{statusRow}</div>
+			{countdownTimerContent}
 		</div>
 	);
 }
@@ -86,11 +194,14 @@ function AdvanceSlideButton({
 export default function PDFViewer() {
 	const { sessionId } = useSession();
 	const {
-		autoUnlockReady,
 		isPaused,
 		isRecording,
 		recordingTime,
 		startRecording,
+		interventionState,
+		answerActive,
+		endAnswerWindow,
+		answerSecondsDefault,
 		setSelectedAssignment: onAssignmentChange,
 		handleSlideAdvance: onSlideAdvance,
 		handleSlideLockTriggered: onSlideLockTriggered,
@@ -112,43 +223,37 @@ export default function PDFViewer() {
 
 	// Slide timestamp tracking for audio splitting
 	const [slideTimestamps, setSlideTimestamps] = useState([]);
-	const [recordingStartTime, setRecordingStartTime] = useState(null);
 
 	// show modal after successful upload
 	const [showRecordModal, setShowRecordModal] = useState(false);
 
 	// ref to hidden replace-file input (for "upload different file")
 	const replaceInputRef = useRef(null);
+	const isInterventionComplete =
+		interventionState === INTERVENTION_STATES.batch_complete ||
+		interventionState === INTERVENTION_STATES.final_complete;
 
 	// Handle auto-unlock when intervention is complete
 	useEffect(() => {
-		if (autoUnlockReady && isLocked) {
+		if (isInterventionComplete && isLocked) {
 			setIsLocked(false);
-			// Also mark this slide as permanently unlocked
 			setUnlockedSlides((prev) => new Set([...prev, pageNumber]));
-			console.log(
-				`Auto-unlock triggered for slide ${pageNumber} after intervention completion`
-			);
 		}
-	}, [autoUnlockReady, isLocked, pageNumber]);
+	}, [isInterventionComplete, isLocked, pageNumber]);
 
-	// Track recording start time for timestamp calculations
+	// Initialize first slide stamp at 0s when recording starts; clear after a true end
 	useEffect(() => {
-		if (isRecording && !recordingStartTime) {
-			const startTime = Date.now();
-			setRecordingStartTime(startTime);
-			console.log("📊 Recording start time tracked:", startTime);
-
+		if (isRecording && slideTimestamps.length === 0) {
 			// Initialize timestamps with slide 1
 			const initialTimestamp = { slideNumber: 1, timestamp: 0 };
 			setSlideTimestamps([initialTimestamp]);
-		} else if (!isRecording && !isPaused && recordingStartTime) {
-			// Only reset when not recording AND not paused (i.e., truly ended)
-			setRecordingStartTime(null);
-			setSlideTimestamps([]);
-			console.log("📊 Recording timestamp tracking reset");
 		}
-	}, [isRecording, isPaused, recordingStartTime, onSlideTimestampsChange]);
+
+		// Clear stamps after a *true* end (not just pause)
+		if (!isRecording && !isPaused && slideTimestamps.length > 0) {
+			setSlideTimestamps([]);
+		}
+	}, [isRecording, isPaused, slideTimestamps]);
 
 	useEffect(() => {
 		if (slideTimestamps.length) {
@@ -167,6 +272,7 @@ export default function PDFViewer() {
 			fileType === "application/x-pdf" ||
 			fileType === "application/acrobat";
 		const isPdfByName = /\.pdf$/i.test(fileName || "");
+
 		if (!file || !(isPdfByType || isPdfByName)) {
 			setError("Please upload a valid PDF file.");
 			return;
@@ -198,28 +304,12 @@ export default function PDFViewer() {
 			formData.append("sessionId", sessionId);
 		}
 
-		// include the last processing session id so the backend can clean local images
-		const prevUploadId = localStorage.getItem("currentPDFUploadId");
-
-		if (prevUploadId) {
-			formData.append("previousUploadId", prevUploadId);
-		}
-
 		try {
 			const data = await postPdfForSlides(formData);
 
-			// persist the NEW upload id and slide count
-			localStorage.setItem("currentPDFUploadId", data.upload_id); // keep compat if backend still returns session_id
-			localStorage.setItem("currentPDFSlideCount", String(data.slide_count));
-
-			// // Use server-provided safe filename for /assignments/slides
+			// Use server-provided safe filename for /assignments/slides
 			if (onAssignmentChange) {
 				onAssignmentChange(data.filename); // Use the safe filename that was saved to assignments
-			}
-
-			// Optional: if we want to be able to resume a session later and stream from S3:
-			if (data.s3_url) {
-				localStorage.setItem("currentPDFS3Url", data.s3_url);
 			}
 		} catch (error) {
 			console.error("❌ PDF upload error:", error);
@@ -232,6 +322,9 @@ export default function PDFViewer() {
 			setPageNumber(1);
 		} finally {
 			setLoading(false);
+			if (event?.target) {
+				event.target.value = "";
+			}
 		}
 	};
 
@@ -242,7 +335,17 @@ export default function PDFViewer() {
 		setError(null);
 		setIsLocked(false); // Reset lock state on new document
 		setUnlockedSlides(new Set()); // Reset unlocked slides tracking
-		setLockTriggerSlides([numPages]); // Set lock to trigger only on the last page
+
+		const triggers = Array.from(
+			{ length: Math.floor(numPages / 2) },
+			(_, i) => (i + 1) * 2
+		);
+
+		if (!triggers.includes(numPages)) {
+			triggers.push(numPages); // odd slide count → last page triggers a 1-question batch
+		}
+
+		setLockTriggerSlides(triggers);
 
 		// Only way to start recording is via this modal
 		setShowRecordModal(true);
@@ -265,12 +368,10 @@ export default function PDFViewer() {
 			!unlockedSlides.has(pageNumber)
 		) {
 			setIsLocked(true);
-			console.log(`Slide ${pageNumber} triggered auto-lock`);
 
 			// Notify parent component that slide lock was triggered
-			if (onSlideLockTriggered) {
-				onSlideLockTriggered(pageNumber);
-			}
+			const isFinalBatch = !!numPages && pageNumber === numPages;
+			onSlideLockTriggered(pageNumber, isFinalBatch);
 
 			return; // Prevent navigation when lock triggers
 		}
@@ -283,23 +384,14 @@ export default function PDFViewer() {
 
 		setPageNumber(newPageNumber);
 
-		// Record timestamp when advancing to next slide during recording
-		if (offset > 0 && isRecording && recordingStartTime) {
-			const currentTime = Date.now();
-			const elapsedSeconds = (currentTime - recordingStartTime) / 1000;
-			const newTimestamp = {
+		if (offset > 0) {
+			const newTimeStamp = {
 				slideNumber: newPageNumber,
-				timestamp: elapsedSeconds,
+				// IMPORTANT: use the same counter as QA so pauses don’t create drift
+				timestamp: recordingTime,
 			};
 
-			setSlideTimestamps((prev) => {
-				const updated = [...prev, newTimestamp];
-				return updated;
-			});
-
-			console.log(
-				`📊 Slide ${newPageNumber} timestamp recorded: ${elapsedSeconds}s`
-			);
+			setSlideTimestamps((prev) => [...prev, newTimeStamp]);
 		}
 
 		// Notify parent when advancing slides (for recording resume)
@@ -316,19 +408,6 @@ export default function PDFViewer() {
 		setScale((prevScale) => Math.max(0.5, prevScale - 0.2));
 	};
 
-	const toggleLock = () => {
-		if (isLocked) {
-			// Unlocking - mark this slide as unlocked permanently
-			setUnlockedSlides((prev) => new Set([...prev, pageNumber]));
-			setIsLocked(false);
-			console.log(`Slide ${pageNumber} unlocked manually - can now advance`);
-		} else {
-			// Manual lock (probably won't be used much, but keeping for completeness)
-			setIsLocked(true);
-			console.log(`Slide ${pageNumber} locked manually`);
-		}
-	};
-
 	// handlers for the modal buttons
 	const handleStartFromModal = () => {
 		startRecording?.();
@@ -337,6 +416,11 @@ export default function PDFViewer() {
 
 	const handleUploadDifferent = () => {
 		// open the replace-file chooser and keep the modal UX clean
+		if (replaceInputRef.current) {
+			replaceInputRef.current.value = null;
+		}
+
+		// Open the replace-file chooser and keep the modal UX clean
 		replaceInputRef.current?.click();
 		setShowRecordModal(false);
 	};
@@ -345,16 +429,22 @@ export default function PDFViewer() {
 
 	const handleFinishButton = async () => {
 		if (pageNumber !== numPages) return;
-
 		setIsLocked(true);
-		if (onSlideLockTriggered) {
-			onSlideLockTriggered(pageNumber); // no blob → context will pauseRecording()
-		}
+		onSlideLockTriggered(pageNumber, true);
 	};
 
 	const handleCloseRecordingModal = () => {
 		setShowRecordModal(false);
 	};
+
+	const lockText = isLocked ? "Slide Locked. Answer VC Questions" : "";
+	const lockIcon = isLocked ? "🔒" : "🔓";
+	const lockTitle = isLocked
+		? "Locked — answer VC questions to continue"
+		: "Unlocked";
+	const lockClasses = `inline-flex items-center justify-center text-[18px] p-1.5 rounded select-none ${
+		isLocked ? "bg-[#fff3cd] text-yellow-800" : "bg-transparent text-gray-600"
+	}`;
 
 	return (
 		<div className="pdf-viewer">
@@ -367,7 +457,7 @@ export default function PDFViewer() {
 
 			<div className="pdf-controls">
 				<div className="file-upload-section">
-					{!uploadedFile ? (
+					{!uploadedFile && (
 						<div className="upload-container">
 							<label
 								htmlFor="pdf-upload"
@@ -383,25 +473,6 @@ export default function PDFViewer() {
 							</label>
 							<input
 								id="pdf-upload"
-								type="file"
-								accept="application/pdf"
-								onChange={handleFileUpload}
-								className="file-input"
-								style={{ display: "none" }}
-							/>
-						</div>
-					) : (
-						<div className="uploaded-file-info">
-							<span className="file-name">📄 {uploadedFileName}</span>
-							<label
-								htmlFor="pdf-replace"
-								className="replace-file-btn"
-							>
-								Replace File
-							</label>
-							<input
-								id="pdf-replace"
-								ref={replaceInputRef}
 								type="file"
 								accept="application/pdf"
 								onChange={handleFileUpload}
@@ -435,27 +506,16 @@ export default function PDFViewer() {
 
 							{/* Lock indicator and control */}
 							<div className="lock-controls">
-								<button
-									onClick={toggleLock}
-									className={`lock-btn ${isLocked ? "locked" : "unlocked"}`}
-									title={
-										isLocked
-											? autoUnlockReady
-												? "Click to unlock and continue"
-												: "Locked - answer VC questions to continue"
-											: "Slide unlocked"
-									}
-									disabled={false}
+								<span
+									role="img"
+									aria-label={lockTitle}
+									title={lockTitle}
+									className={lockClasses}
 								>
-									{isLocked ? (autoUnlockReady ? "🔓✨" : "🔒") : "🔓"}
-								</button>
-								{isLocked && (
-									<span className="lock-status">
-										{autoUnlockReady
-											? "✅ Click unlock button to continue presentation"
-											: "Slide Locked - Answer VC Questions"}
-									</span>
-								)}
+									{lockIcon}
+								</span>
+
+								{isLocked && <span className="lock-status">{lockText}</span>}
 							</div>
 						</div>
 
@@ -515,10 +575,14 @@ export default function PDFViewer() {
 			</div>
 
 			<div className="recording-section">
-				<RecordingStatus
+				<RecordingBar
 					isRecording={isRecording}
 					isPaused={isPaused}
 					recordingTime={recordingTime}
+					interventionState={interventionState}
+					answerActive={answerActive}
+					answerSecondsDefault={answerSecondsDefault}
+					onContinue={endAnswerWindow}
 				/>
 			</div>
 		</div>

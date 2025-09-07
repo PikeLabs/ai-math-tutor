@@ -1,18 +1,17 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 
-// import Feedback from "./Feedback";
 import AppProvider from "./contexts/AppContext";
 import AuthProvider from "./contexts/AuthContext";
 
 import Dashboard from "./components/professor/Dashboard";
-import FeedbackPage from "./pages/FeedbackPage";
 import LandingPage from "./components/LandingPage";
 import Login from "./components/professor/Login";
-import ProfessorRoute from "./components/ProfessorRoute";
-import RequireSession from "./components/RequireSession";
 import StudentFlow from "./components/student/StudentFlow";
-import StudentNameInput from "./components/StudentNameInput";
-import { useSession } from "./contexts/SessionContext";
+import StudentNameInput from "./components/student/StudentNameInput";
+import StudentRoute from "./components/routes/StudentRoute";
+import ProfessorRoute from "./components/routes/ProfessorRoute";
+import FeedbackPage from "./pages/FeedbackPage";
+import { useSession } from "./hooks/useSession";
 
 import "./App.css";
 
@@ -39,19 +38,17 @@ function AppRoutes() {
 					path="/start"
 					element={<StudentNameInput />}
 				/>
-				<Route
-					path="/student"
-					element={
-						<RequireSession>
-							<StudentFlow />
-						</RequireSession>
-					}
-				/>
+				<Route element={<StudentRoute />}>
+					<Route
+						path="/student"
+						element={<StudentFlow />}
+					/>
 
-				<Route
-					path="/feedback"
-					element={<FeedbackPage />}
-				/>
+					<Route
+						path="/feedback"
+						element={<FeedbackPage />}
+					/>
+				</Route>
 			</Routes>
 		</Router>
 	);

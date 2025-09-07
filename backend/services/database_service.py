@@ -1,11 +1,13 @@
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union, Literal
 from datetime import datetime, timezone
+from prisma.enums import AssetKind
+
 from config.prisma import db
 from utils.parsing import parse_iso_to_utc
 
 
 # --- Students ---
-# TODO: replace the “create student by name” shortcut with real auth + student context.
+# TODO: replace the “create student by name” shortcut with real auth  student context.
 # For now it unblocks persistence.
 def create_student(name: str):
     return db.student.create(data={"name": name})
@@ -14,8 +16,8 @@ def create_student(name: str):
 # --- Sessions ---
 def create_session(
     student_id: str,
-    slide_count: Optional[int] = None,
-    pdf_url: Optional[str] = None,
+    slide_count: int | None = None,
+    pdf_url: str | None = None,
 ):
     return db.session.create(
         data={
@@ -27,21 +29,22 @@ def create_session(
     )
 
 
+def update_session(session_id: str, data: Dict[str, Any]):
+    return db.session.update(where={"id": session_id}, data=data)
+
+
 def get_session_by_id(session_id: str):
     return db.session.find_unique(
         where={"id": session_id},
         include={
             "student": True,
             "feedback": True,
+            "slideAssets": True,
             "conversations": {
                 "orderBy": {"timestamp": "asc"},
             },
         },
     )
-
-
-def update_session(session_id: str, data: Dict[str, Any]):
-    return db.session.update(where={"id": session_id}, data=data)
 
 
 # fetch all student sessions with feedback
@@ -62,15 +65,13 @@ def list_sessions():
         trimmed.append(
             {
                 "id": r.id,
-                # If your JSON encoder can’t handle datetimes, use .isoformat():
+                # If fe JSON encoder can’t handle datetimes, use .isoformat():
                 "createdAt": r.createdAt,  # or r.createdAt.isoformat()
                 "completedAt": r.completedAt,  # or r.completedAt.isoformat() if not None
                 "student": ({"id": stu.id, "name": stu.name} if stu else None),
                 "feedback": {
                     "presentationScore": (fb.presentationScore if fb else None),
                 },
-                # Uncomment if you sort/filter by these in the UI:
-                # "slideCount": r.slideCount,
                 # "status": r.status,
             }
         )
@@ -78,12 +79,32 @@ def list_sessions():
     return trimmed
 
 
+def get_latest_feedback_for_session(session_id: str):
+    """
+    Return the most recent feedback row for a session_id or None.
+    """
+    row = db.feedback.find_first(
+        where={"sessionId": session_id},
+        order={"createdAt": "desc"},
+        include={
+            "session": {
+                "include": {
+                    "conversations": True,
+                    "slideAssets": True,
+                }
+            }
+        },
+    )
+
+    return row
+
+
 # --- Conversations ---
 def add_conversation(
     session_id: str,
     role: str,
     content: str,
-    slide_number: Optional[int] = None,
+    slide_number: int | None = None,
     timestamp: Optional[Union[str, datetime]] = None,
 ):
     ts: datetime
@@ -136,10 +157,10 @@ def add_conversations_bulk(items: List[Dict[str, Any]]):
 def save_feedback(
     session_id: str,
     overall_feedback: str,
-    presentation_score: Optional[int] = None,
-    slide_feedback: Optional[str] = None,
-    strengths: Optional[str] = None,
-    improvements: Optional[str] = None,
+    presentation_score: int | None = None,
+    slide_feedback: str | None = None,
+    strengths: str | None = None,
+    improvements: str | None = None,
 ):
     """
     Create-or-update feedback by sessionId (manual upsert).
@@ -173,33 +194,108 @@ def save_feedback(
     return db.feedback.create(data=data)
 
 
-def mark_feedback_reviewed(session_id: str, reviewed: bool):
+def mark_feedback_reviewed(
+    session_id: str,
+    reviewed: bool,
+):
     try:
         # Feedback.sessionId is unique; create if missing (so professor can mark first view)
         existing = db.feedback.find_unique(where={"sessionId": session_id})
         now = datetime.now(timezone.utc)
 
         if not existing:
-            fb = db.feedback.create(
-                {
-                    "data": {
-                        "sessionId": session_id,
-                        "overallFeedback": "",
-                        "presentationScore": None,
-                        "viewedByProfessor": reviewed,
-                        "viewedAt": now if reviewed else None,
-                    }
+            return db.feedback.create(
+                data={
+                    "sessionId": session_id,
+                    "overallFeedback": "",
+                    "presentationScore": None,
+                    "viewedByProfessor": reviewed,
+                    "viewedAt": now if reviewed else None,
                 }
             )
-            return fb
 
-        fb = db.feedback.update(
+        return db.feedback.update(
             where={"id": existing.id},
             data={
                 "viewedByProfessor": reviewed,
                 "viewedAt": now if reviewed else None,
             },
         )
-        return fb
+
     except Exception as e:
         raise e
+
+
+# --- SlideAsset helpers ---
+def _ensure_asset_type(
+    kind: Literal["image_thumb", "image_full", "audio"],
+) -> AssetKind:
+    try:
+        return AssetKind[kind]
+    except KeyError:
+        raise ValueError(f"Invalid asset kind: {kind}")
+
+
+def upsert_slide_asset(
+    *,
+    session_id: str,
+    slide_number: int,
+    kind: Literal["image_thumb", "image_full", "audio"],
+    s3_key: str,
+    mime_type: str | None = None,
+    size_bytes: int | None = None,
+    duration_ms: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
+):
+    """
+    Create-or-replace a SlideAsset identified by (sessionId, slideNumber, kind).
+    """
+    file_kind = _ensure_asset_type(kind)
+
+    # The schema has @@unique([sessionId, slideNumber, kind])
+    existing = db.slideasset.find_first(
+        where={"sessionId": session_id, "slideNumber": slide_number, "kind": file_kind}
+    )
+
+    data = {
+        "sessionId": session_id,
+        "slideNumber": slide_number,
+        "kind": file_kind,
+        "s3Key": s3_key,
+        "mimeType": mime_type,
+        "sizeBytes": size_bytes,
+        "durationMs": duration_ms,
+        "width": width,
+        "height": height,
+    }
+
+    if existing:
+        return db.slideasset.update(
+            where={"id": existing.id},
+            data=data,
+        )
+
+    return db.slideasset.create(data=data)
+
+
+def list_slide_assets_for_session(session_id: str):
+    return db.slideasset.find_many(
+        where={"sessionId": session_id},
+        order={"slideNumber": "asc"},
+    )
+
+
+def get_slide_asset(
+    session_id: str,
+    slide_number: int,
+    kind: Literal["image_thumb", "image_full", "audio"],
+):
+    file_kind = _ensure_asset_type(kind)
+    return db.slideasset.find_first(
+        where={
+            "sessionId": session_id,
+            "slideNumber": slide_number,
+            "kind": file_kind,
+        }
+    )

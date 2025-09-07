@@ -2,7 +2,8 @@
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    APP_ENV=development
 
 # System deps for PDFs & audio
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,11 +20,9 @@ RUN python -m pip install --upgrade pip && \
 
 # Dev: generate client once so local starts are quick
 COPY prisma ./prisma
-RUN python -m prisma generate --schema ./prisma/schema.prisma
   
 # Copy backend code
 COPY . /app/backend/
-
 
 # Tell Prisma where the schema is (inside backend/)
 ENV PRISMA_SCHEMA=/app/backend/prisma/schema.prisma

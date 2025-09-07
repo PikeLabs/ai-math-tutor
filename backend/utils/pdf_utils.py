@@ -1,11 +1,9 @@
-from optparse import Option
 import os
 import PyPDF2
-from typing import Optional
 from utils.path_utils import path_in_assignments
 
 
-def _resolve_pdf_path(pdf: str) -> Optional[str]:
+def _resolve_pdf_path(pdf: str) -> str | None:
     """
     Return an absolute path to a PDF under ASSIGNMENTS_DIR if it exists
     and has a .pdf extension. Otherwise return None.
@@ -17,7 +15,7 @@ def _resolve_pdf_path(pdf: str) -> Optional[str]:
     return None
 
 
-def extract_pdf_text(pdf_path: str) -> Optional[str]:
+def extract_pdf_text(pdf_path: str) -> str | None:
     """
     Extract text content from a PDF file.
 
@@ -25,12 +23,9 @@ def extract_pdf_text(pdf_path: str) -> Optional[str]:
         pdf_path (str): Path to the PDF file
 
     Returns:
-        Optional[str]: Extracted text content or None if extraction fails
+        str | None: Extracted text content or None if extraction fails
     """
     try:
-        # if not os.path.exists(pdf_path):
-        #     return None
-
         text_content = ""
 
         with open(pdf_path, "rb") as file:
@@ -39,7 +34,9 @@ def extract_pdf_text(pdf_path: str) -> Optional[str]:
             # Extract text from all pages
             for page_num in range(len(pdf_reader.pages)):
                 page = pdf_reader.pages[page_num]
-                text_content += page.extract_text() + "\n"
+                page_text = page.extract_text() or ""
+                if page_text:
+                    text_content += page_text + "\n"
 
         return text_content.strip() if text_content.strip() else None
 
@@ -48,7 +45,7 @@ def extract_pdf_text(pdf_path: str) -> Optional[str]:
         return None
 
 
-def get_assignment_text(pdf: str) -> Optional[str]:
+def get_assignment_text(pdf: str) -> str | None:
     """
     Get text content from an assignment PDF file.
 
@@ -56,7 +53,7 @@ def get_assignment_text(pdf: str) -> Optional[str]:
         filename (str): Name of the PDF file in the assignments directory
 
     Returns:
-        Optional[str]: Extracted text content or None if extraction fails
+        str | None: Extracted text content or None if extraction fails
     """
 
     pdf_path = _resolve_pdf_path(pdf)
@@ -66,8 +63,10 @@ def get_assignment_text(pdf: str) -> Optional[str]:
 
 
 def extract_pdf_slides_range(
-    pdf_path: str, start_slide: int, end_slide: int
-) -> Optional[str]:
+    pdf_path: str,
+    start_slide: int,
+    end_slide: int,
+) -> str | None:
     """
     Extract text content from a specific range of slides/pages in a PDF.
 
@@ -77,12 +76,9 @@ def extract_pdf_slides_range(
         end_slide (int): Ending slide number (1-indexed)
 
     Returns:
-        Optional[str]: Extracted text content from the slide range or None if extraction fails
+        str | None: Extracted text content from the slide range or None if extraction fails
     """
     try:
-        # if not os.path.exists(pdf_path):
-        #     return None
-
         text_content = ""
 
         with open(pdf_path, "rb") as file:
@@ -96,7 +92,7 @@ def extract_pdf_slides_range(
             # Extract text from specified pages
             for page_num in range(start_idx, end_idx + 1):
                 page = pdf_reader.pages[page_num]
-                page_text = page.extract_text()
+                page_text = page.extract_text() or ""
                 text_content += f"--- Slide {page_num + 1} ---\n{page_text}\n\n"
 
         return text_content.strip() if text_content.strip() else None
@@ -110,7 +106,7 @@ def get_assignment_slides_range(
     pdf: str,
     start_slide: int,
     end_slide: int,
-) -> Optional[str]:
+) -> str | None:
     """
     Get text content from a specific slide range in an assignment PDF file.
 
@@ -120,7 +116,7 @@ def get_assignment_slides_range(
         end_slide (int): Ending slide number (1-indexed)
 
     Returns:
-        Optional[str]: Extracted text content from the slide range or None if extraction fails
+        str | None: Extracted text content from the slide range or None if extraction fails
     """
     pdf_path = _resolve_pdf_path(pdf)
     if not pdf_path:

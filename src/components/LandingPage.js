@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useSession } from "../contexts/SessionContext";
+
+import { useSession } from "../hooks/useSession";
 
 export default function LandingPage() {
 	const navigate = useNavigate();

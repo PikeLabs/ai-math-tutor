@@ -1,5 +1,6 @@
 import json, os, tempfile
 from flask import Blueprint, request
+
 from utils.http import ok, bad_request, internal_error
 from services.ai_service import chat_with_ai, transcribe_audio
 from services.database_service import add_conversation
@@ -40,6 +41,10 @@ def _process_chat_request(
         None,
     )
     student_text = (last_user or {}).get("content", "") or ""
+
+    if "[SLIDE_CONTEXT]" in student_text or "CONTEXT:" in student_text:
+        student_text = ""
+
     if audio_transcription:
         # keep it simple for MVP; append transcription as a block
         student_text = (

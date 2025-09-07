@@ -3,9 +3,8 @@ import { useState } from "react";
 import SlideModal from "../feedback/SlideModal";
 import SlideImage from "../feedback/SlideImage";
 import { ColumnHeader } from "../ui/Tables";
-import { IMAGE_BASE } from "../../constants";
+import { resolveUrl } from "../../utils";
 
-// Note: This is the new Feedback display component, where the session and feedback and slides are passed in as props.
 const statusIconMap = {
 	met: "✓",
 	not_met: "✗",
@@ -75,7 +74,7 @@ function AudioContainer({ audio_url }) {
 	}
 
 	const handleAudioError = () => setAudioError(true);
-	const audioSrc = `${IMAGE_BASE}${audio_url}`;
+	const audioSrc = resolveUrl(audio_url);
 
 	return (
 		<div>
@@ -84,10 +83,7 @@ function AudioContainer({ audio_url }) {
 				className="w-[180px] mx-auto"
 				onError={handleAudioError}
 			>
-				<source
-					src={audioSrc}
-					type="audio/mpeg"
-				/>
+				<source src={audioSrc} />
 				Your browser does not support the audio element.
 			</audio>
 			<div className="mt-1 text-[11px] text-gray-600">Audio for this slide</div>
@@ -98,36 +94,37 @@ function AudioContainer({ audio_url }) {
 function ImageContainer({ image_url, alt, onClick }) {
 	const [imageError, setImageError] = useState(false);
 
+	const imageAvailable = image_url && !imageError;
+	if (!imageAvailable) {
+		return (
+			<div className="w-full h-full border-2 border-dashed border-gray-300 rounded flex items-center justify-center text-gray-600 text-xs">
+				Slide image not available
+			</div>
+		);
+	}
+
+	const clickToView = imageAvailable && (
+		<div className="mt-1 text-[11px] text-gray-600">
+			Click to view full size
+		</div>
+	);
+
 	const handleImageError = (e) => {
 		console.error("Image failed to load:", e);
 		setImageError(true);
 	};
 
-	const thumbSrc = `${IMAGE_BASE}${image_url}`;
-
-	const errorContent = imageError && (
-		<div className="w-full h-full border-2 border-dashed border-gray-300 rounded flex items-center justify-center text-gray-600 text-xs">
-			Slide image not available
-		</div>
-	);
-
 	return (
 		<div className="mx-auto flex flex-col justify-center align-center gap-3">
-			{!imageError && (
-				<SlideImage
-					src={thumbSrc}
-					alt={alt}
-					className="object-contain border-2 border-gray-300 rounded cursor-pointer transition-colors duration-200 hover:border-gray-500"
-					onClick={onClick}
-					onError={handleImageError}
-				/>
-			)}
-			{errorContent}
+			<SlideImage
+				src={image_url}
+				alt={alt}
+				className="object-contain border-2 border-gray-300 rounded cursor-pointer transition-colors duration-200 hover:border-gray-500"
+				onClick={onClick}
+				onError={handleImageError}
+			/>
 
-			{/* TODO: Only show if the modal is closed? */}
-			<div className="mt-1 text-[11px] text-gray-600">
-				Click to view full size
-			</div>
+			{clickToView}
 		</div>
 	);
 }
@@ -170,7 +167,7 @@ function FeedbackReportDetail({
 
 	const handleImageClick = () => {
 		if (image_url_full) {
-			const fullImageSrc = `${IMAGE_BASE}${image_url_full}`;
+			const fullImageSrc = resolveUrl(image_url_full);
 			onImageClick(fullImageSrc, slide_number);
 		}
 	};
@@ -184,12 +181,13 @@ function FeedbackReportDetail({
 					image_url={image_url}
 					alt={imageColumnText}
 					onClick={handleImageClick}
+					slide_number={slide_number}
 				/>
 			</td>
 
 			{/* Feedback Column */}
 			{/* TODO: Why do I need ColumnHeader here?!?! */}
-			<td className={tableDataClass}>
+			<td className={`${tableDataClass} no-print`}>
 				<ColumnHeader title="Learning Objectives" />
 				<FeedbackContainer feedback={feedback} />
 			</td>
@@ -266,6 +264,7 @@ function QAFeedback({ qa }) {
 	);
 }
 
+// TODO: Do we still want this?
 function LegacyFeedback({ text }) {
 	if (!text) return null;
 
@@ -344,7 +343,7 @@ export default function FeedbackReport({ feedback }) {
 							<th className="px-4 py-3 text-center font-semibold text-slate-600">
 								Learning Objectives Feedback
 							</th>
-							<th className="px-4 py-3 text-center font-semibold text-slate-600 w-[220px]">
+							<th className="px-4 py-3 text-center font-semibold text-slate-600 w-[220px] no-print">
 								Audio
 							</th>
 						</tr>

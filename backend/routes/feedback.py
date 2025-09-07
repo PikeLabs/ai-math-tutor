@@ -1,10 +1,51 @@
 import json
 from flask import Blueprint, request
+
 from utils.http import ok, bad_request
 from utils.parsing import parse_int
 from utils.decorators import require_json
-from services.database_service import save_feedback
+
+from services.database_service import (
+    save_feedback,
+    get_latest_feedback_for_session,
+)
 from services.feedback_service import generate_feedback
+from services.media_service import get_presigned_slide_urls
+
+
+def _enrich_with_presigned_urls(structured: dict) -> dict:
+    """
+    Return a copy with transient presigned URLs injected per slide.
+    Uses:
+      - structured['pdf_session_id'] for images
+      - structured['session_id'] for audio segments
+    """
+    if not structured or not isinstance(structured, dict):
+        return structured
+
+    data = json.loads(json.dumps(structured))  # cheap deep copy
+
+    image_session_id = data.get("pdf_session_id") or data.get("session_id")
+    audio_session_id = data.get("session_id")
+
+    for s in data.get("slides", []):
+        num = s.get("slide_number")
+        if not isinstance(num, int):
+            continue
+
+        # Images
+        if image_session_id:
+            img = get_presigned_slide_urls(image_session_id, num)
+            s["image_url"] = img.get("thumb")
+            s["image_url_full"] = img.get("full")
+
+        # Audio
+        if audio_session_id:
+            aud = get_presigned_slide_urls(audio_session_id, num)
+            s["audio_url"] = aud.get("audio")
+            s["audio_mime"] = aud.get("audio_mime")
+
+    return data
 
 
 bp = Blueprint("feedback", __name__)
@@ -36,6 +77,8 @@ def api_save_feedback_route():
     return ok(fb.dict(), 201)
 
 
+# TODO: This doesn't need to return anything anymore...
+# TODO: This should handle cleanup, not the front end...
 @bp.post("/feedback/generate")
 def api_generate_and_save_feedback():
     """
@@ -45,6 +88,7 @@ def api_generate_and_save_feedback():
       - or multipart/form-data with 'recording' blob
     """
     try:
+
         is_form = request.content_type and "multipart/form-data" in request.content_type
 
         # --- Extract inputs ---
@@ -55,20 +99,19 @@ def api_generate_and_save_feedback():
                 return bad_request("sessionId is required")
 
             try:
-                messages = request.form.get("messages")
-                messages = (messages and __import__("json").loads(messages)) or []
+                messages_str = request.form.get("messages")
+                # messages = (messages and __import__("json").loads(messages)) or []
+                messages = json.loads(messages_str) if messages_str else []
             except Exception:
                 messages = []
 
-            selected_assignment = request.form.get("selectedAssignment") or None
             slide_timestamps_raw = request.form.get("slideTimestamps")
             qa_timestamps_raw = request.form.get("qaTimestamps")
 
             try:
                 slide_timestamps = (
-                    slide_timestamps_raw
-                    and __import__("json").loads(slide_timestamps_raw)
-                ) or None
+                    json.loads(slide_timestamps_raw) if slide_timestamps_raw else None
+                )
             except Exception:
                 slide_timestamps = None
 
@@ -81,14 +124,8 @@ def api_generate_and_save_feedback():
             except Exception:
                 qa_timestamps = None
 
-            pdf_upload_id = request.form.get("pdfUploadId") or None
-            pdf_slide_count = request.form.get("pdfSlideCount") or None
-            try:
-                pdf_slide_count = int(pdf_slide_count) if pdf_slide_count else None
-            except Exception:
-                pdf_slide_count = None
-
             recording = request.files.get("recording")  # may be None
+            pdf_session_id = request.form.get("pdfSessionId") or None
         else:
             # json
             data = request.get_json(silent=True) or {}
@@ -97,18 +134,10 @@ def api_generate_and_save_feedback():
                 return bad_request("sessionId is required")
 
             messages = data.get("messages") or []
-            selected_assignment = data.get("selectedAssignment") or None
             slide_timestamps = data.get("slideTimestamps") or None
-            pdf_upload_id = data.get("pdfUploadId") or None
-            pdf_slide_count = data.get("pdfSlideCount")
             qa_timestamps = data.get("qaTimestamps") or None
-
-            try:
-                pdf_slide_count = int(pdf_slide_count) if pdf_slide_count else None
-            except Exception:
-                pdf_slide_count = None
-
             recording = None  # only via multipart
+            pdf_session_id = data.get("pdfSessionId") or None
 
         # --- Call generator ---
         structured = generate_feedback(
@@ -116,9 +145,8 @@ def api_generate_and_save_feedback():
             slide_content=None,  # you can pass actual slide text if you have it
             presentation_recording=recording,
             slide_timestamps=slide_timestamps,
-            assignment_filename=selected_assignment,
-            pdf_session_id=pdf_upload_id,
-            pdf_slide_count=pdf_slide_count,
+            pdf_session_id=pdf_session_id,
+            pdf_slide_count=None,
             qa_timestamps=qa_timestamps,
             asset_session_id=session_id,
         )
@@ -143,13 +171,11 @@ def api_generate_and_save_feedback():
 
         # Persist to DB immediately
         # We serialize the structured object into slide_feedback so it’s queryable later.
-        import json as _json
-
         fb = save_feedback(
             session_id=session_id,
             overall_feedback=overall_text[:2000],  # guard length if desired
             presentation_score=None,  # you can compute a score later if needed
-            slide_feedback=_json.dumps(structured),
+            slide_feedback=json.dumps(structured),
             strengths=None,
             improvements=None,
         )
@@ -161,3 +187,46 @@ def api_generate_and_save_feedback():
 
     except Exception as e:
         return bad_request(f"Feedback generation failed: {str(e)}")
+
+
+@bp.get("/feedback/<string:session_id>")
+def api_get_feedback(session_id):
+    """
+    Return the latest saved feedback row for a session, including structured JSON.
+    This is student-facing and does not require professor auth.
+    """
+    if not session_id:
+        return bad_request("sessionId is required")
+
+    def _empty_feedback():
+        return {
+            "feedback": {
+                "feedback_type": "legacy",
+                "slides": [],
+                "qa_feedback": None,
+                "legacy_text": None,
+                "metadata": {"has_audio": False, "has_conversation": False},
+            }
+        }
+
+    try:
+        fb_row = get_latest_feedback_for_session(session_id)
+
+        if not fb_row:
+            return ok(_empty_feedback())
+
+        try:
+            structured = (
+                json.loads(fb_row.slideFeedback) if fb_row.slideFeedback else None
+            )
+        except Exception:
+            structured = None
+
+        if structured:
+            enriched = _enrich_with_presigned_urls(structured)
+            return ok({"feedback": enriched})
+
+        return ok(_empty_feedback())
+
+    except Exception as e:
+        return bad_request(f"Fetch feedback failed: {str(e)}")

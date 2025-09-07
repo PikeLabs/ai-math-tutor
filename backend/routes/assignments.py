@@ -1,9 +1,10 @@
 import os
 from flask import Blueprint, send_file, request
+
 from utils.pdf_utils import get_assignment_text, get_assignment_slides_range
 from config.paths import ASSIGNMENTS_DIR
-from utils.http import not_found, bad_request, ok
 from utils.path_utils import path_in_assignments
+from utils.http import not_found, bad_request, ok
 
 bp = Blueprint("assignments", __name__)
 

@@ -1,19 +1,17 @@
-import os
 from flask import Flask, request
 from dotenv import load_dotenv
 
-from config.prisma import connect_db, disconnect_db
+from config.prisma import connect_db
 from config.cors import configure_cors
-
 from config.paths import BACKEND_DOTENV
+
+from routes.assignments import bp as assignments_bp
+from routes.auth import auth_bp
+from routes.chat import bp as chat_bp
+from routes.conversations import bp as conversations_bp
+from routes.feedback import bp as feedback_api_bp
 from routes.health import bp as health_bp
 from routes.sessions import bp as sessions_bp
-from routes.conversations import bp as conversations_bp
-from routes.auth import auth_bp
-from routes.feedback import bp as feedback_api_bp
-from routes.chat import bp as chat_bp
-from routes.assignments import bp as assignments_bp
-from routes.media import bp as media_bp
 from routes.uploads import bp as uploads_bp
 
 
@@ -24,17 +22,15 @@ API_PREFIX = "/api/v1"
 
 
 def create_app():
-    app = Flask(__name__)
+    from services.cleanup import start_cleanup_daemon
 
-    storage_root = os.environ.get("STORAGE_ROOT")
-    if storage_root:
-        os.environ.setdefault("TMPDIR", storage_root)
+    app = Flask(__name__)
 
     configure_cors(app)
 
     @app.before_request
-    def _connect():
-        # Let CORS preflights and health checks run without DB
+    def _ensure_prisma():
+        # Let CORS preflights and health checks run without db
         if request.method == "OPTIONS":
             return
         if request.path.startswith(f"{API_PREFIX}/health"):
@@ -42,22 +38,16 @@ def create_app():
 
         connect_db()
 
-    @app.teardown_appcontext
-    def _disconnect(exception=None):
-        try:
-            disconnect_db()
-        except Exception:
-            pass
+    start_cleanup_daemon()
 
     # Register blueprints (all are url_prefix="/api/v1")
+    app.register_blueprint(assignments_bp, url_prefix=API_PREFIX)
     app.register_blueprint(auth_bp, url_prefix=API_PREFIX)
-    app.register_blueprint(health_bp, url_prefix=API_PREFIX)
-    app.register_blueprint(sessions_bp, url_prefix=API_PREFIX)
+    app.register_blueprint(chat_bp, url_prefix=API_PREFIX)
     app.register_blueprint(conversations_bp, url_prefix=API_PREFIX)
     app.register_blueprint(feedback_api_bp, url_prefix=API_PREFIX)
-    app.register_blueprint(chat_bp, url_prefix=API_PREFIX)
-    app.register_blueprint(assignments_bp, url_prefix=API_PREFIX)
-    app.register_blueprint(media_bp, url_prefix=API_PREFIX)
+    app.register_blueprint(health_bp, url_prefix=API_PREFIX)
+    app.register_blueprint(sessions_bp, url_prefix=API_PREFIX)
     app.register_blueprint(uploads_bp, url_prefix=API_PREFIX)
 
     return app

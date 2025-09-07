@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 import TTSService from "../TTSService";
 import Avatar from "../Avatar";
-import { useSession } from "../contexts/SessionContext";
-import { useAppContext } from "../contexts/AppContext";
+import { useSession } from "../hooks/useSession";
+import { useAppContext } from "../hooks/useAppContext";
 import { generateFeedbackMultipart } from "../services/api";
+import { INTERVENTION_STATES } from "../constants";
 
 function IncomingChatMessages({ messages, isLoading }) {
 	let messageContent = null;
@@ -14,7 +15,7 @@ function IncomingChatMessages({ messages, isLoading }) {
 		// TODO: We shouldn't be having roles in the messages anymore...
 		messageContent = messages.map(({ role, content }, index) => (
 			<div
-				key={index + content}
+				key={index}
 				className={`message ${role}`}
 			>
 				<div className="message-content">{content}</div>
@@ -43,16 +44,17 @@ function VcDisplay({
 	isSpeaking,
 	interventionState,
 	questionsAsked,
+	questionsTarget,
 	stopCurrentAudio,
 }) {
-	if (interventionState !== "questioning") return null;
+	if (interventionState !== INTERVENTION_STATES.questioning) return null;
+	const total = questionsTarget || 2; // fallback for safety
 
+	const vcQuestionsText = `VC Questions (${questionsAsked}/${total})`;
 	return (
 		<div className="intervention-status">
 			<span className="intervention-indicator">💬</span>
-			<span className="intervention-text">
-				VC Questions ({questionsAsked}/2)
-			</span>
+			<span className="intervention-text">{vcQuestionsText}</span>
 
 			<button
 				onClick={stopCurrentAudio}
@@ -73,9 +75,10 @@ function GeneratedFeedback({
 	isLoading,
 	genError,
 }) {
-	if (interventionState !== "complete") return null;
-	let status = null;
+	// Only render the banner when a presentation has completed...
+	if (interventionState !== INTERVENTION_STATES.final_complete) return null;
 
+	let status = null;
 	if (isLoading && !feedbackGenerated) {
 		return (
 			<div className="intervention-status complete complete flex items-center justify-center">
@@ -118,9 +121,7 @@ function GeneratedFeedback({
 
 	return (
 		<div className="intervention-status complete">
-			<span className="intervention-text">
-				Questions Complete — Continue Presentation
-			</span>
+			<span className="intervention-text">Questions Completed</span>
 			{status}
 		</div>
 	);
@@ -136,6 +137,7 @@ export default function ChatApp() {
 		questionsAsked,
 		selectedAssignment,
 		slideTimestamps,
+		questionsTarget,
 	} = useAppContext();
 
 	const [isLoading, setIsLoading] = useState(false);
@@ -147,26 +149,7 @@ export default function ChatApp() {
 	const [genError, setGenError] = useState(null);
 	const [hasTriggeredFeedback, setHasTriggeredFeedback] = useState(false);
 
-	// Keep ChatApp in sync with the TTS engine.
-	// Subscribes to TTSService and updates avatarState whenever the VC starts/stops speaking or is loading audio.
-	useEffect(() => {
-		const handleTTSStateChange = (state) => setAvatarState(state);
-		TTSService.addListener(handleTTSStateChange);
-		return () => TTSService.removeListener(handleTTSStateChange);
-	}, []);
-
-	useEffect(() => {
-		if (interventionState === "complete" && !hasTriggeredFeedback) {
-			setHasTriggeredFeedback(true);
-			generateFeedback();
-		}
-	}, [interventionState]); // eslint-disable-line react-hooks/exhaustive-deps
-
-	const stopCurrentAudio = () => {
-		TTSService.stop();
-	};
-
-	const generateFeedback = async () => {
+	const generateFeedback = useCallback(async () => {
 		setIsLoading(true);
 		setGenError(null);
 
@@ -181,9 +164,6 @@ export default function ChatApp() {
 				throw new Error("No presentation audio was recorded.");
 			}
 
-			const pdfUploadId = localStorage.getItem("currentPDFUploadId");
-			const pdfSlideCount = localStorage.getItem("currentPDFSlideCount");
-
 			// Send with recording as multipart form data
 			const formData = new FormData();
 			formData.append("messages", JSON.stringify(messages));
@@ -191,9 +171,8 @@ export default function ChatApp() {
 			formData.append("recording", recordingBlob, "presentation.wav");
 			formData.append("slideTimestamps", JSON.stringify(slideTimestamps));
 			formData.append("qaTimestamps", JSON.stringify(qaTimestamps));
-			formData.append("pdfUploadId", pdfUploadId || "");
-			formData.append("pdfSlideCount", pdfSlideCount || "");
 			formData.append("sessionId", sessionId);
+			formData.append("pdfSessionId", sessionId);
 
 			const data = await generateFeedbackMultipart(formData);
 			console.log("Feedback generation response:", data);
@@ -205,15 +184,51 @@ export default function ChatApp() {
 				payloadToStore?.feedback ||
 				payloadToStore?.qa_feedback
 			) {
-				localStorage.setItem("pitchFeedback", JSON.stringify(payloadToStore));
+				// setPitchFeedback(payloadToStore);
 				setFeedbackGenerated(true);
 			}
 		} catch (err) {
 			console.error("Feedback generation failed:", err);
-			setGenError("Feedback generation failed", err);
+			setGenError("Feedback generation failed");
 		} finally {
 			setIsLoading(false);
 		}
+	}, [
+		getLatestRecording,
+		messages,
+		selectedAssignment,
+		slideTimestamps,
+		qaTimestamps,
+		sessionId,
+	]);
+
+	// Keep ChatApp in sync with the TTS engine.
+	// Subscribes to TTSService and updates avatarState whenever the VC starts/stops speaking or is loading audio.
+	useEffect(() => {
+		const handleTTSStateChange = (state) => setAvatarState(state);
+		TTSService.addListener(handleTTSStateChange);
+		return () => TTSService.removeListener(handleTTSStateChange);
+	}, []);
+
+	useEffect(() => {
+		if (
+			interventionState === INTERVENTION_STATES.final_complete &&
+			!hasTriggeredFeedback
+		) {
+			setHasTriggeredFeedback(true);
+			generateFeedback();
+		}
+	}, [interventionState, hasTriggeredFeedback, generateFeedback]);
+
+	// reset feedback-related flags when the session changes
+	useEffect(() => {
+		setHasTriggeredFeedback(false);
+		setFeedbackGenerated(false);
+		setGenError(null);
+	}, [sessionId]);
+
+	const stopCurrentAudio = () => {
+		TTSService.stop();
 	};
 
 	return (
@@ -231,6 +246,7 @@ export default function ChatApp() {
 						isSpeaking={avatarState.isSpeaking}
 						interventionState={interventionState}
 						questionsAsked={questionsAsked}
+						questionsTarget={questionsTarget}
 						stopCurrentAudio={stopCurrentAudio}
 					/>
 

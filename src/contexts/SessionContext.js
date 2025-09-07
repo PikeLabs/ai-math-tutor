@@ -1,26 +1,27 @@
-import React, {
+import {
 	createContext,
-	useContext,
 	useState,
 	useEffect,
 	useMemo,
+	useCallback,
 } from "react";
 
-const SessionCtx = createContext(null);
-export function useSession() {
-	return useContext(SessionCtx);
-}
+export const SessionCtx = createContext(null);
 
 const SEEN_KEY = "hasSeenInstructions";
+const SESSION_ID_KEY = "sessionId";
+const STUDENT_ID_KEY = "studentId";
+const STUDENT_NAME_KEY = "studentName";
+
 export default function SessionProvider({ children }) {
 	const [sessionId, setSessionId] = useState(
-		() => sessionStorage.getItem("sessionId") || ""
+		() => sessionStorage.getItem(SESSION_ID_KEY) || ""
 	);
 	const [studentId, setStudentId] = useState(
-		() => sessionStorage.getItem("studentId") || ""
+		() => sessionStorage.getItem(STUDENT_ID_KEY) || ""
 	);
 	const [studentName, setStudentName] = useState(
-		() => sessionStorage.getItem("studentName") || ""
+		() => sessionStorage.getItem(STUDENT_NAME_KEY) || ""
 	);
 	const [hasSeenInstructions, setHasSeenInstructions] = useState(
 		() => sessionStorage.getItem(SEEN_KEY) === "1"
@@ -28,19 +29,22 @@ export default function SessionProvider({ children }) {
 
 	useEffect(() => {
 		sessionId
-			? sessionStorage.setItem("sessionId", sessionId)
-			: sessionStorage.removeItem("sessionId");
+			? sessionStorage.setItem(SESSION_ID_KEY, sessionId)
+			: sessionStorage.removeItem(SESSION_ID_KEY);
 	}, [sessionId]);
+
 	useEffect(() => {
 		studentId
-			? sessionStorage.setItem("studentId", studentId)
-			: sessionStorage.removeItem("studentId");
+			? sessionStorage.setItem(STUDENT_ID_KEY, studentId)
+			: sessionStorage.removeItem(STUDENT_ID_KEY);
 	}, [studentId]);
+
 	useEffect(() => {
 		studentName
-			? sessionStorage.setItem("studentName", studentName)
-			: sessionStorage.removeItem("studentName");
+			? sessionStorage.setItem(STUDENT_NAME_KEY, studentName)
+			: sessionStorage.removeItem(STUDENT_NAME_KEY);
 	}, [studentName]);
+
 	useEffect(() => {
 		if (hasSeenInstructions) {
 			sessionStorage.setItem(SEEN_KEY, "1");
@@ -49,16 +53,16 @@ export default function SessionProvider({ children }) {
 		}
 	}, [hasSeenInstructions]);
 
-	const clearSessionStorage = () => {
+	const clearSessionStorage = useCallback(() => {
 		setSessionId("");
 		setStudentId("");
 		setStudentName("");
 		setHasSeenInstructions(false);
-		sessionStorage.removeItem("sessionId");
-		sessionStorage.removeItem("studentId");
-		sessionStorage.removeItem("studentName");
+		sessionStorage.removeItem(SESSION_ID_KEY);
+		sessionStorage.removeItem(STUDENT_ID_KEY);
+		sessionStorage.removeItem(STUDENT_NAME_KEY);
 		sessionStorage.removeItem(SEEN_KEY);
-	};
+	}, []);
 
 	const markInstructionsSeen = () => setHasSeenInstructions(true);
 	const resetInstructionsSeen = () => setHasSeenInstructions(false);
@@ -76,7 +80,13 @@ export default function SessionProvider({ children }) {
 			studentId,
 			studentName,
 		}),
-		[sessionId, studentId, studentName, hasSeenInstructions]
+		[
+			sessionId,
+			studentId,
+			studentName,
+			hasSeenInstructions,
+			clearSessionStorage,
+		]
 	);
 
 	return <SessionCtx.Provider value={value}>{children}</SessionCtx.Provider>;

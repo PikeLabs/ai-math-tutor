@@ -48,6 +48,7 @@ export default function Dashboard() {
 	};
 
 	const handleRefresh = () => {
+		setError("");
 		// manual one-off refresh
 		void tick({ minDurationMs: 1000 }); // give UI time to update
 	};
@@ -119,8 +120,6 @@ export default function Dashboard() {
 		const start = (page - 1) * pageSize;
 		return sorted.slice(start, start + pageSize);
 	}, [sorted, page, pageSize]);
-
-	// const isLoading = busy || pending;
 
 	return (
 		<div className="p-6">
