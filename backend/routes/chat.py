@@ -41,6 +41,10 @@ def _process_chat_request(
         None,
     )
     student_text = (last_user or {}).get("content", "") or ""
+
+    if "[SLIDE_CONTEXT]" in student_text or "CONTEXT:" in student_text:
+        student_text = ""
+
     if audio_transcription:
         # keep it simple for MVP; append transcription as a block
         student_text = (

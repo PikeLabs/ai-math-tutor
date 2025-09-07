@@ -77,17 +77,16 @@ export default function AppProvider({ children, sessionId }) {
 
 				if (isFollowUp) {
 					if (!currentSlideRange) return;
-					const followUpPrompt = buildFollowUpContext(
-						"[voice/timer answer]",
-						currentSlideRange
-					);
+					const followUpPrompt = buildFollowUpContext(currentSlideRange);
 					interventionMessages = [{ role: "user", content: followUpPrompt }];
 				} else {
 					if (!slideNumber) return;
+
 					const slideData = await postAssignmentSlides(selectedAssignment, {
 						start: slideNumber,
 						end: slideNumber,
 					});
+
 					const singleSlideRange = { start: slideNumber, end: slideNumber };
 					const contextMessage = buildEnhancedContext(
 						slideData,
@@ -96,6 +95,7 @@ export default function AppProvider({ children, sessionId }) {
 						1,
 						selectedAssignment
 					);
+
 					interventionMessages = [{ role: "user", content: contextMessage }];
 					slideNumberForPayload = String(slideNumber);
 				}
@@ -107,6 +107,7 @@ export default function AppProvider({ children, sessionId }) {
 					formData.append("selectedAssignment", selectedAssignment);
 					formData.append("audio", audioSegment, "recording.wav");
 					formData.append("sessionId", sessionId || "");
+
 					if (slideNumberForPayload) {
 						formData.append("slideNumber", slideNumberForPayload);
 					}
@@ -221,12 +222,6 @@ export default function AppProvider({ children, sessionId }) {
 
 	// —— Recording controls ————————————————————————————————
 	const pauseRecording = useCallback(() => {
-		console.log(
-			"[pause] state:",
-			mediaRecorder?.state,
-			"isRecording:",
-			isRecording
-		);
 		if (mediaRecorder?.state === "recording") {
 			mediaRecorder.pause();
 			setIsPaused(true);
@@ -241,7 +236,6 @@ export default function AppProvider({ children, sessionId }) {
 	}, [isRecording, mediaRecorder, recordingTimer]);
 
 	const resumeRecording = useCallback(() => {
-		console.log("[resume] state:", mediaRecorder?.state, "isPaused:", isPaused);
 		if (isPaused && mediaRecorder && mediaRecorder.state === "paused") {
 			mediaRecorder.resume();
 			setIsPaused(false);
@@ -250,7 +244,6 @@ export default function AppProvider({ children, sessionId }) {
 				1000
 			);
 			setRecordingTimer(timer);
-			console.log("Recording resumed");
 		}
 	}, [isPaused, mediaRecorder]);
 
