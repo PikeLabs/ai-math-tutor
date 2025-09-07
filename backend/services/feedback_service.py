@@ -31,7 +31,7 @@ CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-5")
 if not AI_API_KEY:
     raise ValueError("OPENAI_API_KEY not found in environment variables")
 
-client = OpenAI(api_key=AI_API_KEY, timeout=20.0)
+client = OpenAI(api_key=AI_API_KEY, timeout=60.0)
 
 
 ##### Helper functions #####

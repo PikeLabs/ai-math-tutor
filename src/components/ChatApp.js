@@ -5,6 +5,7 @@ import Avatar from "../Avatar";
 import { useSession } from "../hooks/useSession";
 import { useAppContext } from "../hooks/useAppContext";
 import { generateFeedbackMultipart } from "../services/api";
+import { INTERVENTION_STATES } from "../constants";
 
 function IncomingChatMessages({ messages, isLoading }) {
 	let messageContent = null;
@@ -43,16 +44,17 @@ function VcDisplay({
 	isSpeaking,
 	interventionState,
 	questionsAsked,
+	questionsTarget,
 	stopCurrentAudio,
 }) {
-	if (interventionState !== "questioning") return null;
+	if (interventionState !== INTERVENTION_STATES.questioning) return null;
+	const total = questionsTarget || 2; // fallback for safety
 
+	const vcQuestionsText = `VC Questions (${questionsAsked}/${total})`;
 	return (
 		<div className="intervention-status">
 			<span className="intervention-indicator">💬</span>
-			<span className="intervention-text">
-				VC Questions ({questionsAsked}/2)
-			</span>
+			<span className="intervention-text">{vcQuestionsText}</span>
 
 			<button
 				onClick={stopCurrentAudio}
@@ -73,9 +75,10 @@ function GeneratedFeedback({
 	isLoading,
 	genError,
 }) {
-	if (interventionState !== "complete") return null;
-	let status = null;
+	// Only render the banner when a presentation has completed...
+	if (interventionState !== INTERVENTION_STATES.final_complete) return null;
 
+	let status = null;
 	if (isLoading && !feedbackGenerated) {
 		return (
 			<div className="intervention-status complete complete flex items-center justify-center">
@@ -118,9 +121,7 @@ function GeneratedFeedback({
 
 	return (
 		<div className="intervention-status complete">
-			<span className="intervention-text">
-				Questions Complete — Continue Presentation
-			</span>
+			<span className="intervention-text">Questions Completed</span>
 			{status}
 		</div>
 	);
@@ -136,6 +137,7 @@ export default function ChatApp() {
 		questionsAsked,
 		selectedAssignment,
 		slideTimestamps,
+		questionsTarget,
 	} = useAppContext();
 
 	const [isLoading, setIsLoading] = useState(false);
@@ -170,6 +172,7 @@ export default function ChatApp() {
 			formData.append("slideTimestamps", JSON.stringify(slideTimestamps));
 			formData.append("qaTimestamps", JSON.stringify(qaTimestamps));
 			formData.append("sessionId", sessionId);
+			formData.append("pdfSessionId", sessionId);
 
 			const data = await generateFeedbackMultipart(formData);
 			console.log("Feedback generation response:", data);
@@ -208,11 +211,14 @@ export default function ChatApp() {
 	}, []);
 
 	useEffect(() => {
-		if (interventionState === "complete" && !hasTriggeredFeedback) {
+		if (
+			interventionState === INTERVENTION_STATES.final_complete &&
+			!hasTriggeredFeedback
+		) {
 			setHasTriggeredFeedback(true);
 			generateFeedback();
 		}
-	}, [interventionState]); // eslint-disable-line react-hooks/exhaustive-deps
+	}, [interventionState, hasTriggeredFeedback, generateFeedback]);
 
 	const stopCurrentAudio = () => {
 		TTSService.stop();
@@ -233,6 +239,7 @@ export default function ChatApp() {
 						isSpeaking={avatarState.isSpeaking}
 						interventionState={interventionState}
 						questionsAsked={questionsAsked}
+						questionsTarget={questionsTarget}
 						stopCurrentAudio={stopCurrentAudio}
 					/>
 

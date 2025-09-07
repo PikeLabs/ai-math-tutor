@@ -18,6 +18,7 @@ function SlideModal({ imageUrl, slideNumber, isOpen, onClose }) {
       document.addEventListener('keydown', handleEscape);
       document.body.style.overflow = 'hidden'; // Prevent background scrolling
 
+      setIsLoading(false)
       return () => {
         document.removeEventListener('keydown', handleEscape);
         document.body.style.overflow = 'unset';
