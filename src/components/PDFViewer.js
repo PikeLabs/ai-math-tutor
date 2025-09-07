@@ -8,7 +8,8 @@ import { PausedIcon, RecordingIcon } from "./ui/RecordingIcon";
 import { postPdfForSlides } from "../services/api";
 import { useAppContext } from "../hooks/useAppContext";
 import { useSession } from "../hooks/useSession";
-import { formatTime } from "../utils/recording.utils";
+import { formatTime } from "../utils";
+import { INTERVENTION_STATES } from "../constants";
 
 // Use the local worker from public directory
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
@@ -26,6 +27,7 @@ function RecordingBar({
 	const [answerSecondsLeft, setAnswerSecondsLeft] = useState(0);
 	const answerTimerRef = useRef(null);
 	const onContinueRef = useRef(onContinue);
+	const hasFiredEndRef = useRef(false); // local one-shot guard
 
 	useEffect(() => {
 		onContinueRef.current = onContinue;
@@ -33,21 +35,30 @@ function RecordingBar({
 
 	// Start/stop the local countdown when in Q&A and answer window is active.
 	useEffect(() => {
-		const inQA = interventionState === "questioning";
+		const inQA = interventionState === INTERVENTION_STATES.questioning;
+
 		if (inQA && answerActive) {
 			// reset any prior
 			if (answerTimerRef.current) {
 				clearInterval(answerTimerRef.current);
 				answerTimerRef.current = null;
 			}
+
+			hasFiredEndRef.current = false;
 			setAnswerSecondsLeft(answerSecondsDefault || 30);
+
 			answerTimerRef.current = setInterval(() => {
 				setAnswerSecondsLeft((prev) => {
 					if (prev <= 1) {
 						clearInterval(answerTimerRef.current);
 						answerTimerRef.current = null;
+
 						// behaves like clicking Continue
-						onContinueRef.current?.("timeout");
+						if (!hasFiredEndRef.current) {
+							hasFiredEndRef.current = true;
+							onContinueRef.current?.("timeout");
+						}
+
 						return 0;
 					}
 					return prev - 1;
@@ -100,14 +111,23 @@ function RecordingBar({
 
 	let countdownTimerContent = null;
 	if (
-		interventionState === "questioning" &&
+		interventionState === INTERVENTION_STATES.questioning &&
 		answerActive &&
 		isRecording &&
 		!isPaused
 	) {
 		const timeLeft = formatTime(answerSecondsLeft);
 		const handleOnContinue = () => {
-			onContinue("continue");
+			// one-shot: cancel timer and fire once
+			if (answerTimerRef.current) {
+				clearInterval(answerTimerRef.current);
+				answerTimerRef.current = null;
+			}
+
+			if (!hasFiredEndRef.current) {
+				hasFiredEndRef.current = true;
+				onContinueRef.current?.("continue");
+			}
 		};
 
 		countdownTimerContent = (
@@ -169,7 +189,6 @@ function AdvanceSlideButton({
 export default function PDFViewer() {
 	const { sessionId } = useSession();
 	const {
-		autoUnlockReady,
 		isPaused,
 		isRecording,
 		recordingTime,
@@ -199,43 +218,37 @@ export default function PDFViewer() {
 
 	// Slide timestamp tracking for audio splitting
 	const [slideTimestamps, setSlideTimestamps] = useState([]);
-	const [recordingStartTime, setRecordingStartTime] = useState(null);
 
 	// show modal after successful upload
 	const [showRecordModal, setShowRecordModal] = useState(false);
 
 	// ref to hidden replace-file input (for "upload different file")
 	const replaceInputRef = useRef(null);
+	const isInterventionComplete =
+		interventionState === INTERVENTION_STATES.batch_complete ||
+		interventionState === INTERVENTION_STATES.final_complete;
 
 	// Handle auto-unlock when intervention is complete
 	useEffect(() => {
-		if (autoUnlockReady && isLocked) {
+		if (isInterventionComplete && isLocked) {
 			setIsLocked(false);
-			// Also mark this slide as permanently unlocked
 			setUnlockedSlides((prev) => new Set([...prev, pageNumber]));
-			console.log(
-				`Auto-unlock triggered for slide ${pageNumber} after intervention completion`
-			);
 		}
-	}, [autoUnlockReady, isLocked, pageNumber]);
+	}, [isInterventionComplete, isLocked, pageNumber]);
 
-	// Track recording start time for timestamp calculations
+	// Initialize first slide stamp at 0s when recording starts; clear after a true end
 	useEffect(() => {
-		if (isRecording && !recordingStartTime) {
-			const startTime = Date.now();
-			setRecordingStartTime(startTime);
-			console.log("📊 Recording start time tracked:", startTime);
-
+		if (isRecording && slideTimestamps.length === 0) {
 			// Initialize timestamps with slide 1
 			const initialTimestamp = { slideNumber: 1, timestamp: 0 };
 			setSlideTimestamps([initialTimestamp]);
-		} else if (!isRecording && !isPaused && recordingStartTime) {
-			// Only reset when not recording AND not paused (i.e., truly ended)
-			setRecordingStartTime(null);
-			setSlideTimestamps([]);
-			console.log("📊 Recording timestamp tracking reset");
 		}
-	}, [isRecording, isPaused, recordingStartTime, onSlideTimestampsChange]);
+
+		// Clear stamps after a *true* end (not just pause)
+		if (!isRecording && !isPaused && slideTimestamps.length > 0) {
+			setSlideTimestamps([]);
+		}
+	}, [isRecording, isPaused, slideTimestamps]);
 
 	useEffect(() => {
 		if (slideTimestamps.length) {
@@ -289,7 +302,7 @@ export default function PDFViewer() {
 		try {
 			const data = await postPdfForSlides(formData);
 
-			// // Use server-provided safe filename for /assignments/slides
+			// Use server-provided safe filename for /assignments/slides
 			if (onAssignmentChange) {
 				onAssignmentChange(data.filename); // Use the safe filename that was saved to assignments
 			}
@@ -317,7 +330,17 @@ export default function PDFViewer() {
 		setError(null);
 		setIsLocked(false); // Reset lock state on new document
 		setUnlockedSlides(new Set()); // Reset unlocked slides tracking
-		setLockTriggerSlides([numPages]); // Set lock to trigger only on the last page
+
+		const triggers = Array.from(
+			{ length: Math.floor(numPages / 2) },
+			(_, i) => (i + 1) * 2
+		);
+
+		if (!triggers.includes(numPages)) {
+			triggers.push(numPages); // odd slide count → last page triggers a 1-question batch
+		}
+
+		setLockTriggerSlides(triggers);
 
 		// Only way to start recording is via this modal
 		setShowRecordModal(true);
@@ -340,12 +363,10 @@ export default function PDFViewer() {
 			!unlockedSlides.has(pageNumber)
 		) {
 			setIsLocked(true);
-			console.log(`Slide ${pageNumber} triggered auto-lock`);
 
 			// Notify parent component that slide lock was triggered
-			if (onSlideLockTriggered) {
-				onSlideLockTriggered(pageNumber);
-			}
+			const isFinalBatch = !!numPages && pageNumber === numPages;
+			onSlideLockTriggered(pageNumber, isFinalBatch);
 
 			return; // Prevent navigation when lock triggers
 		}
@@ -358,23 +379,14 @@ export default function PDFViewer() {
 
 		setPageNumber(newPageNumber);
 
-		// Record timestamp when advancing to next slide during recording
-		if (offset > 0 && isRecording && recordingStartTime) {
-			const currentTime = Date.now();
-			const elapsedSeconds = (currentTime - recordingStartTime) / 1000;
-			const newTimestamp = {
+		if (offset > 0) {
+			const newTimeStamp = {
 				slideNumber: newPageNumber,
-				timestamp: elapsedSeconds,
+				// IMPORTANT: use the same counter as QA so pauses don’t create drift
+				timestamp: recordingTime,
 			};
 
-			setSlideTimestamps((prev) => {
-				const updated = [...prev, newTimestamp];
-				return updated;
-			});
-
-			console.log(
-				`📊 Slide ${newPageNumber} timestamp recorded: ${elapsedSeconds}s`
-			);
+			setSlideTimestamps((prev) => [...prev, newTimeStamp]);
 		}
 
 		// Notify parent when advancing slides (for recording resume)
@@ -389,19 +401,6 @@ export default function PDFViewer() {
 
 	const zoomOut = () => {
 		setScale((prevScale) => Math.max(0.5, prevScale - 0.2));
-	};
-
-	const toggleLock = () => {
-		if (isLocked) {
-			// Unlocking - mark this slide as unlocked permanently
-			setUnlockedSlides((prev) => new Set([...prev, pageNumber]));
-			setIsLocked(false);
-			console.log(`Slide ${pageNumber} unlocked manually - can now advance`);
-		} else {
-			// Manual lock (probably won't be used much, but keeping for completeness)
-			setIsLocked(true);
-			console.log(`Slide ${pageNumber} locked manually`);
-		}
 	};
 
 	// handlers for the modal buttons
@@ -425,16 +424,22 @@ export default function PDFViewer() {
 
 	const handleFinishButton = async () => {
 		if (pageNumber !== numPages) return;
-
 		setIsLocked(true);
-		if (onSlideLockTriggered) {
-			onSlideLockTriggered(pageNumber); // no blob → context will pauseRecording()
-		}
+		onSlideLockTriggered(pageNumber, true);
 	};
 
 	const handleCloseRecordingModal = () => {
 		setShowRecordModal(false);
 	};
+
+	const lockText = isLocked ? "Slide Locked. Answer VC Questions" : "";
+	const lockIcon = isLocked ? "🔒" : "🔓";
+	const lockTitle = isLocked
+		? "Locked — answer VC questions to continue"
+		: "Unlocked";
+	const lockClasses = `inline-flex items-center justify-center text-[18px] p-1.5 rounded select-none ${
+		isLocked ? "bg-[#fff3cd] text-yellow-800" : "bg-transparent text-gray-600"
+	}`;
 
 	return (
 		<div className="pdf-viewer">
@@ -515,27 +520,16 @@ export default function PDFViewer() {
 
 							{/* Lock indicator and control */}
 							<div className="lock-controls">
-								<button
-									onClick={toggleLock}
-									className={`lock-btn ${isLocked ? "locked" : "unlocked"}`}
-									title={
-										isLocked
-											? autoUnlockReady
-												? "Click to unlock and continue"
-												: "Locked - answer VC questions to continue"
-											: "Slide unlocked"
-									}
-									disabled={false}
+								<span
+									role="img"
+									aria-label={lockTitle}
+									title={lockTitle}
+									className={lockClasses}
 								>
-									{isLocked ? (autoUnlockReady ? "🔓✨" : "🔒") : "🔓"}
-								</button>
-								{isLocked && (
-									<span className="lock-status">
-										{autoUnlockReady
-											? "✅ Click unlock button to continue presentation"
-											: "Slide Locked - Answer VC Questions"}
-									</span>
-								)}
+									{lockIcon}
+								</span>
+
+								{isLocked && <span className="lock-status">{lockText}</span>}
 							</div>
 						</div>
 

@@ -18,6 +18,7 @@ import {
 	calculatePresentedSlideRange,
 	buildFollowUpContext,
 } from "../utils";
+import { INTERVENTION_STATES } from "../constants";
 
 export const AppContext = createContext(null);
 
@@ -37,11 +38,15 @@ export default function AppProvider({ children, sessionId }) {
 	const [recordingTimer, setRecordingTimer] = useState(null);
 	const [currentRecordingSegment, setCurrentRecordingSegment] = useState(null);
 
-	// Intervention state
-	const [interventionState, setInterventionState] = useState("inactive"); // 'inactive' | 'questioning' | 'complete'
+	// Intervention state — SINGLE SOURCE OF TRUTH:
+	// 'student_presenting' | 'ai_questioning' | 'questions_batch_complete' | 'final_complete'
+	const [interventionState, setInterventionState] = useState(
+		INTERVENTION_STATES.inactive
+	);
 	const [questionsAsked, setQuestionsAsked] = useState(0);
-	const [autoUnlockReady, setAutoUnlockReady] = useState(false);
 	const [currentSlideRange, setCurrentSlideRange] = useState(null);
+	const [qaSlideQueue, setQaSlideQueue] = useState([]); // e.g., [start, start+1]
+	const [isCurrentBatchFinal, setIsCurrentBatchFinal] = useState(false);
 
 	// Slide timestamps
 	const [slideTimestamps, setSlideTimestamps] = useState([]);
@@ -50,8 +55,9 @@ export default function AppProvider({ children, sessionId }) {
 	// Answer-window (countdown) state
 	const answerStartRef = useRef(null); // already present (used for QA ranges)
 	const answerDefaultSecondsRef = useRef(30); // default countdown per requirement
-	// (Optional) sequence id if we ever need to force re-start logic in the UI
-	const answerWindowSeqRef = useRef(0);
+	const answerWindowOpenRef = useRef(false); // true between startAnswerWindow -> endAnswerWindow
+	const completingBatchRef = useRef(false); // true once we start completing a batch to avoid double-complete
+	const followUpAskedRef = useRef(false);
 
 	// track live values to avoid stale closures
 	const recRef = useRef(isRecording);
@@ -61,68 +67,156 @@ export default function AppProvider({ children, sessionId }) {
 	// Track the “answer” window (only when we’re expecting the student to answer)
 	const interventionRef = useRef(interventionState);
 
-	const generateFollowUpQuestion = useCallback(
-		async (userResponse, currentSlideRange) => {
+	const askQuestion = useCallback(
+		async ({ slideNumber = null, isFollowUp = false, audioSegment = null }) => {
 			try {
-				const followUpContext = buildFollowUpContext(
-					userResponse,
-					currentSlideRange
-				);
+				if (!selectedAssignment) return;
 
-				const conversationMessages = [
-					...messages,
-					{ role: "user", content: followUpContext },
-				];
+				let interventionMessages;
+				let slideNumberForPayload = undefined;
 
-				const data = await createChat({
-					sessionId,
-					messages: conversationMessages,
-					selectedAssignment,
-				});
+				if (isFollowUp) {
+					if (!currentSlideRange) return;
+					const followUpPrompt = buildFollowUpContext(
+						"[voice/timer answer]",
+						currentSlideRange
+					);
+					interventionMessages = [{ role: "user", content: followUpPrompt }];
+				} else {
+					if (!slideNumber) return;
+					const slideData = await postAssignmentSlides(selectedAssignment, {
+						start: slideNumber,
+						end: slideNumber,
+					});
+					const singleSlideRange = { start: slideNumber, end: slideNumber };
+					const contextMessage = buildEnhancedContext(
+						slideData,
+						singleSlideRange,
+						audioSegment,
+						1,
+						selectedAssignment
+					);
+					interventionMessages = [{ role: "user", content: contextMessage }];
+					slideNumberForPayload = String(slideNumber);
+				}
+
+				let data;
+				if (audioSegment && audioSegment instanceof Blob) {
+					const formData = new FormData();
+					formData.append("messages", JSON.stringify(interventionMessages));
+					formData.append("selectedAssignment", selectedAssignment);
+					formData.append("audio", audioSegment, "recording.wav");
+					formData.append("sessionId", sessionId || "");
+					if (slideNumberForPayload) {
+						formData.append("slideNumber", slideNumberForPayload);
+					}
+					data = await createChatWithAudio(formData);
+				} else {
+					data = await createChat({
+						sessionId,
+						messages: interventionMessages,
+						selectedAssignment,
+						...(slideNumberForPayload
+							? { slideNumber: Number(slideNumberForPayload) }
+							: {}),
+					});
+				}
 
 				if (data?.response) {
-					const followUpQuestion = {
-						role: "assistant",
-						content: data.response,
-					};
-
-					setMessages((prev) => [...prev, followUpQuestion]);
+					const aiQuestion = { role: "assistant", content: data.response };
+					setMessages((prev) => [...prev, aiQuestion]);
 					TTSService.speak(data.response);
 				}
 			} catch (err) {
-				console.error("Failed to generate follow-up question:", err);
+				const errorMessage = isFollowUp
+					? "Failed to generate final follow-up question:"
+					: `Failed to generate question for slide ${slideNumber}:`;
+				console.error(errorMessage, err);
 			}
 		},
-		[messages, sessionId, selectedAssignment]
+		[selectedAssignment, sessionId, currentSlideRange]
 	);
 
 	const handleInterventionResponse = useCallback(
-		async (userMessage, currentSlideRange) => {
-			// Called from ChatApp/App when interventionState === "questioning"
-			if (interventionState === "questioning" && questionsAsked < 2) {
-				if (questionsAsked === 0) {
-					setQuestionsAsked(1);
-					await generateFollowUpQuestion(userMessage, currentSlideRange);
-				} else if (questionsAsked === 1) {
-					setQuestionsAsked(2);
-					setInterventionState("complete");
-					setAutoUnlockReady(true);
+		async (_userMessage, _currentSlideRange) => {
+			// Use the ref to avoid stale-closure races
+			if (interventionRef.current !== INTERVENTION_STATES.questioning) return;
+			// If we're already completing, ignore duplicate "end" triggers
+			if (completingBatchRef.current) return;
 
-					// TODO: Should we have a diff message for the end?
-					const vc_completion_response =
-						"Thanks for those answers! Your feedback is being generated now.";
-					// const vc_completion_response =
-					// 	"Thanks for those answers! You can continue with your presentation now.";
-					const completionMessage = {
-						role: "assistant",
-						content: vc_completion_response,
-					};
-					setMessages((prev) => [...prev, completionMessage]);
-					TTSService.speak(completionMessage.content);
+			const nextIndex = questionsAsked + 1;
+			setQuestionsAsked(nextIndex);
+
+			// If we still have slides left in the batch, ask the next slide's question
+			if (nextIndex < qaSlideQueue.length && qaSlideQueue[nextIndex] != null) {
+				const nextSlide = qaSlideQueue[nextIndex];
+				try {
+					// We are NOT completing yet; make sure flag remains false.
+					completingBatchRef.current = false;
+					await askQuestion({
+						slideNumber: nextSlide,
+						audioSegment: currentRecordingSegment,
+					});
+				} catch (e) {
+					console.error("Failed to generate next slide question:", e);
 				}
+				return;
 			}
+
+			// If this is the FINAL batch and we've finished all per-slide questions,
+			// ask the one final follow-up (counts toward questionsTarget as +1).
+			const finishedAllSlideQs = nextIndex === qaSlideQueue.length;
+			if (
+				isCurrentBatchFinal &&
+				finishedAllSlideQs &&
+				!followUpAskedRef.current
+			) {
+				try {
+					completingBatchRef.current = false;
+					followUpAskedRef.current = true;
+
+					await askQuestion({
+						isFollowUp: true,
+						audioSegment: currentRecordingSegment,
+					});
+				} catch (e) {
+					console.error("Failed to generate final follow-up:", e);
+				}
+				return;
+			}
+
+			// Otherwise, we’re done with this batch
+			completingBatchRef.current = true;
+			const nextState = isCurrentBatchFinal
+				? INTERVENTION_STATES.final_complete
+				: INTERVENTION_STATES.batch_complete;
+
+			setInterventionState(nextState);
+
+			const vc_continue_response =
+				"Thanks for those answers! Please click 'Next' to continue with your presentation.";
+			const vc_completion_response =
+				"Thanks for those answers! Your feedback is being generated now.";
+
+			const vc_response = isCurrentBatchFinal
+				? vc_completion_response
+				: vc_continue_response;
+
+			const completionMessage = {
+				role: "assistant",
+				content: vc_response,
+			};
+
+			setMessages((prev) => [...prev, completionMessage]);
+			TTSService.speak(completionMessage.content);
 		},
-		[interventionState, questionsAsked, generateFollowUpQuestion]
+		[
+			questionsAsked,
+			askQuestion,
+			qaSlideQueue,
+			currentRecordingSegment,
+			isCurrentBatchFinal,
+		]
 	);
 
 	// —— Recording controls ————————————————————————————————
@@ -219,49 +313,52 @@ export default function AppProvider({ children, sessionId }) {
 			answerStartRef.current = recordingTime;
 			answerDefaultSecondsRef.current = seconds;
 			setAnswerActive(true);
-			answerWindowSeqRef.current += 1;
+
+			// prevents double ending
+			answerWindowOpenRef.current = true;
 		},
 		[recordingTime]
 	);
 
-	const endAnswerWindow = useCallback(
-		async (reason = "continue") => {
-			if (!answerActive) return;
-			setAnswerActive(false);
+	const endAnswerWindow = useCallback(async () => {
+		// Idempotent: only allow once while the window is open
+		if (!answerWindowOpenRef.current) return;
+		answerWindowOpenRef.current = false;
 
-			// stop the student’s answer segment
-			if (recRef.current && !pausedRef.current) {
-				pauseRecording?.();
-			}
+		if (!answerActive) return;
+		setAnswerActive(false);
 
-			// stamp QA timestamps using recording-time seconds
-			if (answerStartRef.current != null) {
-				const start = answerStartRef.current;
-				const end = recordingTime;
-				if (end > start) {
-					setQaTimestamps((prev) => [...prev, { start, end }]);
-				}
-				answerStartRef.current = null;
-			}
+		// stop the student’s answer segment
+		if (recRef.current && !pausedRef.current) {
+			pauseRecording?.();
+		}
 
-			// Advance the intervention flow: ask follow-up (Q2) or finish.
-			try {
-				await handleInterventionResponse(
-					"[voice/timer answer]",
-					currentSlideRange
-				);
-			} catch (e) {
-				console.error("Failed to advance after answer window end:", e);
+		// stamp QA timestamps using recording-time seconds
+		if (answerStartRef.current != null) {
+			const start = answerStartRef.current;
+			const end = recordingTime;
+			if (end > start) {
+				setQaTimestamps((prev) => [...prev, { start, end }]);
 			}
-		},
-		[
-			answerActive,
-			pauseRecording,
-			handleInterventionResponse,
-			currentSlideRange,
-			recordingTime,
-		]
-	);
+			answerStartRef.current = null;
+		}
+
+		// Advance the intervention flow: ask follow-up (Q2) or finish.
+		try {
+			await handleInterventionResponse(
+				"[voice/timer answer]",
+				currentSlideRange
+			);
+		} catch (e) {
+			console.error("Failed to advance after answer window end:", e);
+		}
+	}, [
+		answerActive,
+		pauseRecording,
+		handleInterventionResponse,
+		currentSlideRange,
+		recordingTime,
+	]);
 
 	const getLatestRecording = useCallback(() => {
 		return new Promise((resolve) => {
@@ -304,130 +401,78 @@ export default function AppProvider({ children, sessionId }) {
 		currentRecordingSegment,
 	]);
 
-	const generateVCQuestion = useCallback(
-		async (slideData, slideRange, audioSegment) => {
-			try {
-				// Build the enhanced context message with our existing VC prompt structure
-				const contextMessage = buildEnhancedContext(
-					slideData,
-					slideRange,
-					audioSegment,
-					1,
-					selectedAssignment
-				);
-
-				// Create a temporary message list with just this intervention
-				const interventionMessages = [
-					{ role: "user", content: contextMessage },
-				];
-
-				let data;
-
-				// If we have an audio segment, send as multipart form data
-				if (audioSegment && audioSegment instanceof Blob) {
-					const formData = new FormData();
-					formData.append("messages", JSON.stringify(interventionMessages));
-					formData.append("selectedAssignment", selectedAssignment);
-					formData.append("audio", audioSegment, "recording.wav");
-					formData.append("sessionId", sessionId || ""); // Include session ID if available
-					formData.append("slideNumber", String(slideRange?.end || ""));
-
-					data = await createChatWithAudio(formData);
-				} else {
-					data = await createChat({
-						sessionId,
-						messages: interventionMessages,
-						selectedAssignment,
-						slideNumber: slideRange?.end || "",
-					});
-				}
-
-				if (data?.response) {
-					// Add the AI's first VC question to the chat automatically
-					const aiQuestion = { role: "assistant", content: data.response };
-					setMessages((prev) => [...prev, aiQuestion]);
-
-					// Trigger TTS for AI intervention question
-					TTSService.speak(data.response);
-
-					// Don't increment questionsAsked here - it gets incremented in handleInterventionResponse
-					console.log("AI VC Question 1 generated:", data.response);
-				}
-			} catch (error) {
-				console.error("Failed to generate VC question:", error);
-			}
-		},
-		[selectedAssignment, sessionId]
-	);
-
 	const handleAIIntervention = useCallback(
-		async (slideRange, audioSegment) => {
+		async (slideRange) => {
 			try {
-				console.log(
-					`AI Intervention triggered for slides ${slideRange.start}-${slideRange.end}`
-				);
-
 				if (!selectedAssignment) {
-					console.error("No assignment selected for AI intervention");
 					return;
 				}
 
-				const slideData = await postAssignmentSlides(
-					selectedAssignment,
-					slideRange
-				);
+				// Build queue for the batch: one question per slide
+				const queue = [];
+				for (let n = slideRange.start; n <= slideRange.end; n++) {
+					queue.push(n);
+				}
 
-				console.log("Extracted slide content:", slideData);
+				setQaSlideQueue(queue);
+				setQuestionsAsked(0);
 
-				// Build enhanced context and send to AI
-				await generateVCQuestion(slideData, slideRange, audioSegment);
+				// Ask the first question for the first slide in the batch
+				const first = queue[0];
+				await askQuestion({
+					slideNumber: first,
+					audioSegment: currentRecordingSegment,
+				});
 			} catch (error) {
 				console.error("AI Intervention failed:", error);
 			}
 		},
-		[generateVCQuestion, selectedAssignment]
+		[askQuestion, selectedAssignment, currentRecordingSegment]
 	);
 
 	const handleSlideLockTriggered = useCallback(
-		async (slideNumber, recordingBlob = null) => {
-			// Use provided recording blob or fallback to current recording segment
-			const audioData = recordingBlob || currentRecordingSegment;
-
-			// Only pause if we don't have a recording blob (meaning recording wasn't already stopped)
-			if (!recordingBlob && isRecording && !isPaused) {
+		async (slideNumber, isLastBatch = false) => {
+			// Always pause so nothing leaks into Q&A
+			if (isRecording && !isPaused) {
 				pauseRecording();
 			}
 
-			// Calculate the slide range that was just presented
+			// Range for the just-presented slides (e.g., 1–2, 3–4, or last single if odd number)
 			const slideRange = calculatePresentedSlideRange(slideNumber);
 
+			// if it's the final batch AND the last page number is odd,
+			// force a single-slide final batch (one question before feedback).
+			if (isLastBatch && slideNumber % 2 === 1) {
+				// (no removal; this is an insertion)
+				slideRange.start = slideNumber;
+				slideRange.end = slideNumber;
+			}
+
 			// Start intervention session
-			setInterventionState("questioning");
+			setInterventionState(INTERVENTION_STATES.questioning);
+			completingBatchRef.current = false;
+			followUpAskedRef.current = false;
 			setQuestionsAsked(0);
 			setCurrentSlideRange(slideRange);
-			setAutoUnlockReady(false);
+			// setAutoUnlockReady(false);
+			setIsCurrentBatchFinal(!!isLastBatch);
 
 			// Trigger AI intervention with context and recording
-			await handleAIIntervention(slideRange, audioData);
+			await handleAIIntervention(slideRange);
 		},
-		[
-			currentRecordingSegment,
-			handleAIIntervention,
-			isPaused,
-			isRecording,
-			pauseRecording,
-		]
+		[handleAIIntervention, isPaused, isRecording, pauseRecording]
 	);
 
 	// Handle slide lock triggering recording pause
 	const handleSlideAdvance = useCallback(() => {
 		// Called when user advances slides after auto-unlock
-		if (interventionState === "complete" && isPaused) {
+		if (interventionState === INTERVENTION_STATES.batch_complete && isPaused) {
 			// Reset intervention state and resume recording
-			setInterventionState("inactive");
+			setInterventionState(INTERVENTION_STATES.student_presenting);
 			setQuestionsAsked(0);
 			setCurrentSlideRange(null);
-			setAutoUnlockReady(false);
+			// setAutoUnlockReady(false);
+			setIsCurrentBatchFinal(false);
 
 			// Resume recording automatically
 			resumeRecording();
@@ -469,7 +514,8 @@ export default function AppProvider({ children, sessionId }) {
 
 			if (pausedByAIRef.current && recRef.current) {
 				pausedByAIRef.current = false;
-				if (interventionRef.current === "questioning") {
+
+				if (interventionRef.current === INTERVENTION_STATES.questioning) {
 					resumeRecording?.();
 					pausedByAIRef.current = false;
 					startAnswerWindow();
@@ -483,85 +529,44 @@ export default function AppProvider({ children, sessionId }) {
 
 	const value = useMemo(
 		() => ({
-			// chat
+			answerActive,
+			answerSecondsDefault: answerDefaultSecondsRef.current,
+			endAnswerWindow,
+			getLatestRecording,
+			handleSlideAdvance,
+			handleSlideLockTriggered,
+			interventionState,
+			isPaused,
+			isRecording,
 			messages,
-			setMessages,
+			qaTimestamps,
+			questionsAsked,
+			questionsTarget: qaSlideQueue.length + (isCurrentBatchFinal ? 1 : 0),
+			recordingTime,
 			selectedAssignment,
 			setSelectedAssignment,
-
-			// recording
-			isRecording,
-			isPaused,
-			startRecording,
-			stopRecording,
-			pauseRecording,
-			resumeRecording,
-			recordingTime,
-			currentRecordingSegment,
-			getLatestRecording,
-
-			// intervention
-			interventionState,
-			setInterventionState,
-			questionsAsked,
-			setQuestionsAsked,
-			autoUnlockReady,
-			setAutoUnlockReady,
-			currentSlideRange,
-			handleInterventionResponse,
-
-			// slide flow handlers
-			handleSlideLockTriggered,
-			handleSlideAdvance,
-			setCurrentSlideRange,
-
-			// timestamps
-			slideTimestamps,
 			setSlideTimestamps,
-			qaTimestamps,
-			setQaTimestamps,
-
-			// answer window
-			answerActive,
-			startAnswerWindow,
-			endAnswerWindow,
-			answerSecondsDefault: answerDefaultSecondsRef.current,
+			slideTimestamps,
+			startRecording,
 		}),
 		[
-			// chat
-			messages,
-			selectedAssignment,
-
-			// recording
-			isRecording,
-			isPaused,
-			startRecording,
-			stopRecording,
-			pauseRecording,
-			resumeRecording,
-			recordingTime,
-			currentRecordingSegment,
-			getLatestRecording,
-
-			// intervention
-			interventionState,
-			questionsAsked,
-			autoUnlockReady,
-			currentSlideRange,
-			handleInterventionResponse,
-
-			// slide flow handlers
-			handleSlideLockTriggered,
-			handleSlideAdvance,
-
-			// timestamps
-			slideTimestamps,
-			qaTimestamps,
-
-			// answer window
 			answerActive,
-			startAnswerWindow,
 			endAnswerWindow,
+			getLatestRecording,
+			handleSlideAdvance,
+			handleSlideLockTriggered,
+			interventionState,
+			isPaused,
+			isRecording,
+			messages,
+			qaTimestamps,
+			questionsAsked,
+			qaSlideQueue.length,
+			recordingTime,
+			selectedAssignment,
+			slideTimestamps,
+			startRecording,
+			isCurrentBatchFinal,
 		]
 	);
 

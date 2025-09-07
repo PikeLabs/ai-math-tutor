@@ -15,7 +15,7 @@ function IncomingChatMessages({ messages, isLoading }) {
 		// TODO: We shouldn't be having roles in the messages anymore...
 		messageContent = messages.map(({ role, content }, index) => (
 			<div
-				key={index + content}
+				key={index}
 				className={`message ${role}`}
 			>
 				<div className="message-content">{content}</div>
@@ -219,6 +219,13 @@ export default function ChatApp() {
 			generateFeedback();
 		}
 	}, [interventionState, hasTriggeredFeedback, generateFeedback]);
+
+	// reset feedback-related flags when the session changes
+	useEffect(() => {
+		setHasTriggeredFeedback(false);
+		setFeedbackGenerated(false);
+		setGenError(null);
+	}, [sessionId]);
 
 	const stopCurrentAudio = () => {
 		TTSService.stop();
