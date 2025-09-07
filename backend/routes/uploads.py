@@ -126,8 +126,8 @@ def api_upload_slides():
         except Exception as e:
             # Non-fatal; we still have a local file for the live session
             print(f"⚠️ S3 upload failed: {e}")
-            # TODO: Do we need this return
-            return bad_request("S3 upload failed")
+            # images won't be in S3, but the session PDF + text extraction still works.
+            slide_paths = slide_paths or {}
 
         try:
             # cleanup *previous* local artifacts if caller provided the old processing id

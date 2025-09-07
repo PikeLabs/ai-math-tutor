@@ -105,7 +105,6 @@ def api_generate_and_save_feedback():
             except Exception:
                 messages = []
 
-            selected_assignment = request.form.get("selectedAssignment") or None
             slide_timestamps_raw = request.form.get("slideTimestamps")
             qa_timestamps_raw = request.form.get("qaTimestamps")
 
@@ -135,7 +134,6 @@ def api_generate_and_save_feedback():
                 return bad_request("sessionId is required")
 
             messages = data.get("messages") or []
-            selected_assignment = data.get("selectedAssignment") or None
             slide_timestamps = data.get("slideTimestamps") or None
             qa_timestamps = data.get("qaTimestamps") or None
             recording = None  # only via multipart

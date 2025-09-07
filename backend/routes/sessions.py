@@ -52,10 +52,6 @@ def api_patch_session(session_id: str):
         except ValueError as e:
             return bad_request(str(e))
 
-    status = data.get("status")
-    if status:
-        valid = {s.value for s in SessionStatus}
-
     if "status" in data:
         status = str(data["status"]).strip()
         valid = {s.value for s in SessionStatus}
