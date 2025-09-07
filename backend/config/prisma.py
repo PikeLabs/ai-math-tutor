@@ -1,43 +1,47 @@
+# backend/config/prisma.py
 import threading
 import atexit
 from prisma import Prisma
 
-
-db = Prisma()
-
+_db = None  # lazily created per worker
+_DB_LOCK = threading.Lock()
 _CONNECT_LOCK = threading.Lock()
-_CONNECTING = False
-_CONNECTED = False
 
 
-def connect_db():
-    global _CONNECTED, _CONNECTING
+def get_db():
+    global _db
+    if _db is None:
+        with _DB_LOCK:
+            if _db is None:
+                _db = Prisma()  # created inside the *worker* on first use
+    return _db
+
+
+def connect_db() -> None:
+    db = get_db()
     if db.is_connected():
-        _CONNECTED = True
         return
-
     with _CONNECT_LOCK:
-        if db.is_connected():
-            _CONNECTED = True
-            return
-
-        if not _CONNECTING:
-            _CONNECTING = True
-            try:
-                db.connect()
-                print("✅ Prisma connected")
-                _CONNECTED = True
-            finally:
-                _CONNECTING = False
+        if not db.is_connected():
+            db.connect()
+            print("✅ Prisma connected")
 
 
-def disconnect_db():
-    global _CONNECTED
-    if db.is_connected():
-        db.disconnect()
+def disconnect_db() -> None:
+    global _db
+    # Don't create a client just to disconnect
+    if _db is not None and _db.is_connected():
+        _db.disconnect()
         print("🧹 Prisma disconnected")
-        _CONNECTED = False
 
 
-# Ensure clean shutdown for each worker
 atexit.register(disconnect_db)
+
+
+
+class _DBProxy:
+    def __getattr__(self, name):
+        return getattr(get_db(), name)
+
+
+db = _DBProxy()  # optional back-compat shim

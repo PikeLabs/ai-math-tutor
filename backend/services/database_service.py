@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Any, Union, Literal
 from datetime import datetime, timezone
 from prisma.enums import AssetKind
 
-from config.prisma import db
+from config.prisma import get_db
 from utils.parsing import parse_iso_to_utc
 
 
@@ -10,6 +10,7 @@ from utils.parsing import parse_iso_to_utc
 # TODO: replace the “create student by name” shortcut with real auth  student context.
 # For now it unblocks persistence.
 def create_student(name: str):
+    db = get_db()
     return db.student.create(data={"name": name})
 
 
@@ -19,6 +20,7 @@ def create_session(
     slide_count: int | None = None,
     pdf_url: str | None = None,
 ):
+    db = get_db()
     return db.session.create(
         data={
             "studentId": student_id,
@@ -30,10 +32,12 @@ def create_session(
 
 
 def update_session(session_id: str, data: Dict[str, Any]):
+    db = get_db()
     return db.session.update(where={"id": session_id}, data=data)
 
 
 def get_session_by_id(session_id: str):
+    db = get_db()
     return db.session.find_unique(
         where={"id": session_id},
         include={
@@ -49,6 +53,7 @@ def get_session_by_id(session_id: str):
 
 # fetch all student sessions with feedback
 def list_sessions():
+    db = get_db()
     rows = db.session.find_many(
         include={
             "student": True,  # brings Student model (or None)
@@ -83,6 +88,7 @@ def get_latest_feedback_for_session(session_id: str):
     """
     Return the most recent feedback row for a session_id or None.
     """
+    db = get_db()
     row = db.feedback.find_first(
         where={"sessionId": session_id},
         order={"createdAt": "desc"},
@@ -107,6 +113,7 @@ def add_conversation(
     slide_number: int | None = None,
     timestamp: Optional[Union[str, datetime]] = None,
 ):
+    db = get_db()
     ts: datetime
     if timestamp:
         try:
@@ -128,6 +135,8 @@ def add_conversation(
 
 
 def add_conversations_bulk(items: List[Dict[str, Any]]):
+    db = get_db()
+
     # Convert incoming items' timestamps to datetime in UTC
     normed = []
     for it in items:
@@ -166,6 +175,8 @@ def save_feedback(
     Create-or-update feedback by sessionId (manual upsert).
     Returns the DB model instance (with .dict()) like other helpers.
     """
+    db = get_db()
+
     data = {
         "sessionId": session_id,
         "overallFeedback": overall_feedback,
@@ -198,6 +209,7 @@ def mark_feedback_reviewed(
     session_id: str,
     reviewed: bool,
 ):
+    db = get_db()
     try:
         # Feedback.sessionId is unique; create if missing (so professor can mark first view)
         existing = db.feedback.find_unique(where={"sessionId": session_id})
@@ -251,6 +263,8 @@ def upsert_slide_asset(
     """
     Create-or-replace a SlideAsset identified by (sessionId, slideNumber, kind).
     """
+    db = get_db()
+
     file_kind = _ensure_asset_type(kind)
 
     # The schema has @@unique([sessionId, slideNumber, kind])
@@ -280,6 +294,8 @@ def upsert_slide_asset(
 
 
 def list_slide_assets_for_session(session_id: str):
+    db = get_db()
+
     return db.slideasset.find_many(
         where={"sessionId": session_id},
         order={"slideNumber": "asc"},
@@ -291,6 +307,8 @@ def get_slide_asset(
     slide_number: int,
     kind: Literal["image_thumb", "image_full", "audio"],
 ):
+    db = get_db()
+
     file_kind = _ensure_asset_type(kind)
     return db.slideasset.find_first(
         where={

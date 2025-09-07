@@ -17,5 +17,5 @@ def ok(payload, status=200):
     return jsonify(payload), status
 
 
-def internal_error(msg: str = "Internal server error"):
-    return jsonify({"error": msg}), 500
+def internal_error(msg: str = "Internal server error", status: int = 500):
+    return jsonify({"error": msg}), status

@@ -1,4 +1,3 @@
-
 import os
 from flask import Blueprint
 
@@ -11,7 +10,7 @@ def health():
     from datetime import datetime, timezone
 
     environment = os.getenv("APP_ENV", "development")
-    current_time = datetime.now(timezone.utc)
+    current_time = datetime.now(timezone.utc).isoformat()
 
     return {
         "ok": True,

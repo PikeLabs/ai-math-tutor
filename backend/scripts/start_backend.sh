@@ -73,5 +73,8 @@ exec gunicorn \
   --workers "${GUNICORN_WORKERS}" \
   --threads "${GUNICORN_THREADS}" \
   --timeout "${GUNICORN_TIMEOUT}" \
+  --log-level info \
+  --access-logfile - \
+  --error-logfile - \
   $EXTRA \
   wsgi:app

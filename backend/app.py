@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from config.prisma import connect_db
 from config.cors import configure_cors
 from config.paths import BACKEND_DOTENV
+from utils.http import internal_error
 
 from routes.assignments import bp as assignments_bp
 from routes.auth import auth_bp
@@ -35,8 +36,12 @@ def create_app():
             return
         if request.path.startswith(f"{API_PREFIX}/health"):
             return
-
-        connect_db()
+        try:
+            connect_db()
+        except Exception as e:
+            app.logger.exception("Failed to connect to database")
+            # Avoid killing workers; return 503 so the app stays up.
+            return internal_error("Database unavailable", 503)
 
     start_cleanup_daemon()
 
