@@ -47,6 +47,7 @@ export default function AppProvider({ children, sessionId }) {
 	const [currentSlideRange, setCurrentSlideRange] = useState(null);
 	const [qaSlideQueue, setQaSlideQueue] = useState([]); // e.g., [start, start+1]
 	const [isCurrentBatchFinal, setIsCurrentBatchFinal] = useState(false);
+	const [batchStartIndex, setBatchStartIndex] = useState(0);
 
 	// Slide timestamps
 	const [slideTimestamps, setSlideTimestamps] = useState([]);
@@ -66,6 +67,21 @@ export default function AppProvider({ children, sessionId }) {
 
 	// Track the “answer” window (only when we’re expecting the student to answer)
 	const interventionRef = useRef(interventionState);
+
+	const msgIdRef = useRef(0);
+
+	function pushPendingAssistantMessage() {
+		const id = `m_${msgIdRef.current++}`;
+		const pending = { id, role: "assistant", content: "", pending: true };
+		setMessages((prev) => [...prev, pending]);
+		return id;
+	}
+
+	function finalizeAssistantMessage(id, content) {
+		setMessages((prev) =>
+			prev.map((m) => (m.id === id ? { ...m, content, pending: false } : m))
+		);
+	}
 
 	const askQuestion = useCallback(
 		async ({ slideNumber = null, isFollowUp = false, audioSegment = null }) => {
@@ -101,6 +117,8 @@ export default function AppProvider({ children, sessionId }) {
 				}
 
 				let data;
+				const pendingId = pushPendingAssistantMessage();
+
 				if (audioSegment && audioSegment instanceof Blob) {
 					const formData = new FormData();
 					formData.append("messages", JSON.stringify(interventionMessages));
@@ -124,9 +142,10 @@ export default function AppProvider({ children, sessionId }) {
 				}
 
 				if (data?.response) {
-					const aiQuestion = { role: "assistant", content: data.response };
-					setMessages((prev) => [...prev, aiQuestion]);
+					finalizeAssistantMessage(pendingId, data.response);
 					TTSService.speak(data.response);
+				} else {
+					finalizeAssistantMessage(pendingId, "...");
 				}
 			} catch (err) {
 				const errorMessage = isFollowUp
@@ -145,8 +164,11 @@ export default function AppProvider({ children, sessionId }) {
 			// If we're already completing, ignore duplicate "end" triggers
 			if (completingBatchRef.current) return;
 
-			const nextIndex = questionsAsked + 1;
-			setQuestionsAsked(nextIndex);
+			let nextIndex;
+			setQuestionsAsked((prev) => {
+				nextIndex = prev + 1;
+				return nextIndex;
+			});
 
 			// If we still have slides left in the batch, ask the next slide's question
 			if (nextIndex < qaSlideQueue.length && qaSlideQueue[nextIndex] != null) {
@@ -203,21 +225,11 @@ export default function AppProvider({ children, sessionId }) {
 				? vc_completion_response
 				: vc_continue_response;
 
-			const completionMessage = {
-				role: "assistant",
-				content: vc_response,
-			};
-
-			setMessages((prev) => [...prev, completionMessage]);
-			TTSService.speak(completionMessage.content);
+			const pendingId = pushPendingAssistantMessage();
+			finalizeAssistantMessage(pendingId, vc_response);
+			TTSService.speak(vc_response);
 		},
-		[
-			questionsAsked,
-			askQuestion,
-			qaSlideQueue,
-			currentRecordingSegment,
-			isCurrentBatchFinal,
-		]
+		[askQuestion, qaSlideQueue, currentRecordingSegment, isCurrentBatchFinal]
 	);
 
 	// —— Recording controls ————————————————————————————————
@@ -447,13 +459,19 @@ export default function AppProvider({ children, sessionId }) {
 			followUpAskedRef.current = false;
 			setQuestionsAsked(0);
 			setCurrentSlideRange(slideRange);
-			// setAutoUnlockReady(false);
+			setBatchStartIndex(messages.length);
 			setIsCurrentBatchFinal(!!isLastBatch);
 
 			// Trigger AI intervention with context and recording
 			await handleAIIntervention(slideRange);
 		},
-		[handleAIIntervention, isPaused, isRecording, pauseRecording]
+		[
+			handleAIIntervention,
+			isPaused,
+			isRecording,
+			pauseRecording,
+			messages.length,
+		]
 	);
 
 	// Handle slide lock triggering recording pause
@@ -461,7 +479,7 @@ export default function AppProvider({ children, sessionId }) {
 		// Called when user advances slides after auto-unlock
 		if (interventionState === INTERVENTION_STATES.batch_complete && isPaused) {
 			// Reset intervention state and resume recording
-			setInterventionState(INTERVENTION_STATES.student_presenting);
+			setInterventionState(INTERVENTION_STATES.presenting);
 			setQuestionsAsked(0);
 			setCurrentSlideRange(null);
 			// setAutoUnlockReady(false);
@@ -497,7 +515,6 @@ export default function AppProvider({ children, sessionId }) {
 	useEffect(() => {
 		const onTTS = (state) => {
 			if (state?.isSpeaking) {
-				// awaitingAnswerRef.current = false;
 				if (recRef.current && !pausedRef.current) {
 					pauseRecording?.();
 				}
@@ -524,6 +541,7 @@ export default function AppProvider({ children, sessionId }) {
 		() => ({
 			answerActive,
 			answerSecondsDefault: answerDefaultSecondsRef.current,
+			batchStartIndex,
 			endAnswerWindow,
 			getLatestRecording,
 			handleSlideAdvance,
@@ -538,12 +556,14 @@ export default function AppProvider({ children, sessionId }) {
 			recordingTime,
 			selectedAssignment,
 			setSelectedAssignment,
+			setInterventionState,
 			setSlideTimestamps,
 			slideTimestamps,
 			startRecording,
 		}),
 		[
 			answerActive,
+			batchStartIndex,
 			endAnswerWindow,
 			getLatestRecording,
 			handleSlideAdvance,

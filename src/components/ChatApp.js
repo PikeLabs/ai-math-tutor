@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 import TTSService from "../TTSService";
 import Avatar from "../Avatar";
@@ -7,21 +7,78 @@ import { useAppContext } from "../hooks/useAppContext";
 import { generateFeedbackMultipart } from "../services/api";
 import { INTERVENTION_STATES } from "../constants";
 
-function IncomingChatMessages({ messages, isLoading }) {
+function IncomingChatMessages({
+	messages,
+	isLoading,
+	interventionState,
+	feedbackGenerated,
+	batchStartIndex = 0,
+}) {
+	const listRef = useRef(null);
+
 	let messageContent = null;
 	let isLoadingContent = null;
 
+	const vcIsQuestioning = interventionState === INTERVENTION_STATES.questioning;
+	const questionBatchIsComplete =
+		interventionState === INTERVENTION_STATES.batch_complete;
+	const isFinalComplete =
+		interventionState === INTERVENTION_STATES.final_complete;
+	const studentPresenting =
+		interventionState === INTERVENTION_STATES.presenting;
+
 	if (messages && messages.length) {
-		// TODO: We shouldn't be having roles in the messages anymore...
-		messageContent = messages.map(({ role, content }, index) => (
-			<div
-				key={index}
-				className={`message ${role}`}
-			>
-				<div className="message-content">{content}</div>
-			</div>
-		));
+		const sinceBatch = messages.slice(Math.max(0, batchStartIndex));
+		let n = 0;
+
+		if (vcIsQuestioning) {
+			// show everything since this batch began (includes pending spinner rows)
+			n = sinceBatch.length;
+		} else if (questionBatchIsComplete) {
+			// show all content from this batch including 'thanks...' line;
+			n = sinceBatch.length;
+		} else if (isFinalComplete && !feedbackGenerated) {
+			n = Math.min(1, sinceBatch.length);
+		}
+
+		const messagesToShow =
+			n > 0 && !studentPresenting ? sinceBatch.slice(-n) : [];
+
+		messageContent = messagesToShow.map(
+			({ role, content, pending, id }, index) => {
+				if (pending) {
+					return (
+						<div
+							key={id}
+							className="mt-2 flex items-center gap-2 pl-10"
+						>
+							{" "}
+							<div className="h-4 w-4 rounded-full border-2 border-gray-300 border-t-transparent animate-spin" />
+							<span className="text-sm text-gray-500">Preparing question…</span>
+						</div>
+					);
+				}
+
+				return (
+					<div
+						key={id}
+						className={`message ${role}`}
+					>
+						<div className="message-content">{content}</div>
+					</div>
+				);
+			}
+		);
 	}
+
+	useEffect(() => {
+		const rafId = requestAnimationFrame(() => {
+			const el = listRef.current;
+			if (el) el.scrollTop = el.scrollHeight;
+		});
+
+		return () => cancelAnimationFrame(rafId);
+	}, [messages?.length, interventionState]);
 
 	if (isLoading) {
 		isLoadingContent = (
@@ -32,38 +89,14 @@ function IncomingChatMessages({ messages, isLoading }) {
 	}
 
 	return (
-		<div className="chat-messages">
-			{messageContent}
-			{isLoadingContent}
-		</div>
-	);
-}
-
-// TODO: Better name for this component
-function VcDisplay({
-	isSpeaking,
-	interventionState,
-	questionsAsked,
-	questionsTarget,
-	stopCurrentAudio,
-}) {
-	if (interventionState !== INTERVENTION_STATES.questioning) return null;
-	const total = questionsTarget || 2; // fallback for safety
-
-	const vcQuestionsText = `VC Questions (${questionsAsked}/${total})`;
-	return (
-		<div className="intervention-status">
-			<span className="intervention-indicator">💬</span>
-			<span className="intervention-text">{vcQuestionsText}</span>
-
-			<button
-				onClick={stopCurrentAudio}
-				disabled={!isSpeaking}
-				className="stop-speech-btn ml-auto"
-				title="Stop speech"
+		<div className="min-h-0">
+			<div
+				ref={listRef}
+				className="flex-1 p-5 overflow-y-auto flex flex-col gap-[15px] min-h-0 "
 			>
-				🔇
-			</button>
+				{messageContent}
+				{isLoadingContent}
+			</div>
 		</div>
 	);
 }
@@ -127,15 +160,81 @@ function GeneratedFeedback({
 	);
 }
 
+function VcChatContainer({
+	feedbackGenerated,
+	genError,
+	interventionState,
+	isLoading,
+	isSpeaking,
+	messages,
+	questionsAsked,
+	questionsTarget,
+	stopCurrentAudio,
+	batchStartIndex,
+}) {
+	let vcDisplay = null;
+	const vcIsQuestioning = interventionState === INTERVENTION_STATES.questioning;
+
+	if (vcIsQuestioning) {
+		const totalQuestions = questionsTarget || 2;
+		const vcQuestionsText = `VC Questions (${questionsAsked}/${totalQuestions})`;
+
+		vcDisplay = (
+			<div className="intervention-status">
+				<span className="intervention-indicator">💬</span>
+				<span className="intervention-text">{vcQuestionsText}</span>
+
+				<button
+					onClick={stopCurrentAudio}
+					disabled={!isSpeaking}
+					className="stop-speech-btn ml-auto"
+					title="Stop speech"
+				>
+					🔇
+				</button>
+			</div>
+		);
+	}
+
+	return (
+		<div className="chat-container">
+			<div className="chat-header">
+				<h1>VC Mentor</h1>
+			</div>
+
+			{vcDisplay}
+
+			<GeneratedFeedback
+				interventionState={interventionState}
+				feedbackGenerated={feedbackGenerated}
+				isLoading={isLoading}
+				genError={genError}
+			/>
+
+			<IncomingChatMessages
+				batchStartIndex={batchStartIndex}
+				messages={messages}
+				isLoading={isLoading}
+				interventionState={interventionState}
+				questionsAsked={questionsAsked}
+				questionsTarget={questionsTarget}
+				feedbackGenerated={feedbackGenerated}
+			/>
+		</div>
+	);
+}
+
 export default function ChatApp() {
 	const { sessionId } = useSession();
 	const {
+		batchStartIndex,
 		getLatestRecording,
 		interventionState,
 		messages,
 		qaTimestamps,
 		questionsAsked,
 		selectedAssignment,
+		setInterventionState,
 		slideTimestamps,
 		questionsTarget,
 	} = useAppContext();
@@ -175,7 +274,6 @@ export default function ChatApp() {
 			formData.append("pdfSessionId", sessionId);
 
 			const data = await generateFeedbackMultipart(formData);
-			console.log("Feedback generation response:", data);
 			const payloadToStore = data?.structured || data;
 
 			if (
@@ -186,6 +284,7 @@ export default function ChatApp() {
 			) {
 				// setPitchFeedback(payloadToStore);
 				setFeedbackGenerated(true);
+				setInterventionState(INTERVENTION_STATES.inactive);
 			}
 		} catch (err) {
 			console.error("Feedback generation failed:", err);
@@ -200,6 +299,7 @@ export default function ChatApp() {
 		slideTimestamps,
 		qaTimestamps,
 		sessionId,
+		setInterventionState,
 	]);
 
 	// Keep ChatApp in sync with the TTS engine.
@@ -238,31 +338,19 @@ export default function ChatApp() {
 				isLoading={avatarState.isLoading}
 				isProcessing={isLoading}
 			/>
-			<div className="chat-container">
-				<div className="chat-header">
-					<h1>VC Mentor</h1>
 
-					<VcDisplay
-						isSpeaking={avatarState.isSpeaking}
-						interventionState={interventionState}
-						questionsAsked={questionsAsked}
-						questionsTarget={questionsTarget}
-						stopCurrentAudio={stopCurrentAudio}
-					/>
-
-					<GeneratedFeedback
-						interventionState={interventionState}
-						feedbackGenerated={feedbackGenerated}
-						isLoading={isLoading}
-						genError={genError}
-					/>
-				</div>
-
-				<IncomingChatMessages
-					messages={messages}
-					isLoading={isLoading}
-				/>
-			</div>
+			<VcChatContainer
+				feedbackGenerated={feedbackGenerated}
+				batchStartIndex={batchStartIndex}
+				genError={genError}
+				interventionState={interventionState}
+				isLoading={isLoading}
+				isSpeaking={avatarState.isSpeaking}
+				messages={messages}
+				questionsAsked={questionsAsked}
+				questionsTarget={questionsTarget}
+				stopCurrentAudio={stopCurrentAudio}
+			/>
 		</div>
 	);
 }
