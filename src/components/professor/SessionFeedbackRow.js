@@ -7,6 +7,9 @@ import Chevron from "../ui/Chevron";
 import { toLocale } from "../../utils";
 import { getProfessorSession } from "../../services/api";
 
+
+const FEEDBACK_TABLE_COLUMNS = 5;
+
 function DropDownContainer({
 	toggleOpen,
 	feedbackData,
@@ -78,7 +81,6 @@ function DropDownButton({ toggleOpen, onClick }) {
 	);
 }
 
-const COLS = 6;
 function SessionFeedbackDetails({ session }) {
 	// If dashboard already queries feedback, do I need to call getProfessorSession?
 	const [isLoading, setIsLoading] = useState(false);
@@ -178,11 +180,6 @@ function SessionFeedbackDetails({ session }) {
 				</td>
 				{/* Student column */}
 				<td className="py-2 text-md font-medium">{studentName}</td>
-				{/* Session ID column */}
-				<td className="py-2 text-md font-medium">
-					{session.id}
-					{/* TODO: Remove SessionDetails */}
-				</td>
 				{/* Created column */}
 				<td className="py-2 text-md font-medium">{meta.created}</td>
 				{/* Completed column */}
@@ -196,7 +193,7 @@ function SessionFeedbackDetails({ session }) {
 			{/* Expanded content row */}
 			<tr className="border-b bg-gray-50">
 				<td
-					colSpan={COLS}
+					colSpan={FEEDBACK_TABLE_COLUMNS}
 					className="p-0"
 				>
 					<div
@@ -226,7 +223,7 @@ export default function SessionFeedbackRow({ rows = [], busy = false }) {
 		return (
 			<tr className="w-full border-b border-gray-200">
 				<td
-					colSpan={COLS}
+					colSpan={FEEDBACK_TABLE_COLUMNS}
 					className="py-2 pl-2 text-center text-gray-500"
 				>
 					{rowContent}
