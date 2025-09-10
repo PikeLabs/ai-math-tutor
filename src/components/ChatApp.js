@@ -4,6 +4,7 @@ import TTSService from "../TTSService";
 import Avatar from "../Avatar";
 import { useSession } from "../hooks/useSession";
 import { useAppContext } from "../hooks/useAppContext";
+import { useCheckpoint } from "../hooks/useCheckpoint";
 import { generateFeedbackMultipart } from "../services/api";
 import { INTERVENTION_STATES } from "../constants";
 
@@ -201,17 +202,19 @@ function VcChatContainer({
 }
 
 export default function ChatApp() {
-	const { sessionId } = useSession();
+	const { sessionId, studentName } = useSession();
+	const { clearCheckpoint } = useCheckpoint();
 	const {
 		batchStartIndex,
 		getLatestRecording,
 		interventionState,
 		messages,
+		numPages,
 		qaTimestamps,
 		questionsAsked,
+		questionsTarget,
 		selectedAssignment,
 		slideTimestamps,
-		questionsTarget,
 	} = useAppContext();
 
 	const [isLoading, setIsLoading] = useState(false);
@@ -242,13 +245,20 @@ export default function ChatApp() {
 
 			// Send with recording as multipart form data
 			const formData = new FormData();
+
+			const baseType = (recordingBlob?.type || "").split(";")[0]; // e.g., "audio/webm" or "audio/ogg"
+			const ext = /ogg$/.test(baseType) ? "ogg" : "webm";
+			const name = `presentation.${ext}`;
+			formData.append("recording", recordingBlob, name);
+
 			formData.append("messages", JSON.stringify(messages));
 			formData.append("selectedAssignment", selectedAssignment || "");
-			formData.append("recording", recordingBlob, "presentation.wav");
 			formData.append("slideTimestamps", JSON.stringify(slideTimestamps));
 			formData.append("qaTimestamps", JSON.stringify(qaTimestamps));
 			formData.append("sessionId", sessionId);
 			formData.append("pdfSessionId", sessionId);
+			formData.append("studentName", studentName || "Student");
+			formData.append("pdfSlideCount", numPages || 0);
 
 			const data = await generateFeedbackMultipart(formData);
 			const payloadToStore = data?.structured || data;
@@ -260,6 +270,7 @@ export default function ChatApp() {
 				payloadToStore?.qa_feedback
 			) {
 				setFeedbackGenerated(true);
+				clearCheckpoint?.(sessionId);
 			}
 		} catch (err) {
 			console.error("Feedback generation failed:", err);
@@ -274,6 +285,7 @@ export default function ChatApp() {
 		slideTimestamps,
 		qaTimestamps,
 		sessionId,
+		clearCheckpoint,
 	]);
 
 	// Keep ChatApp in sync with the TTS engine.

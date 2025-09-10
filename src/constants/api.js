@@ -12,8 +12,9 @@ export const ENDPOINTS = {
 			`${API_BASE}/assignments/${encodeURIComponent(assignment)}/slides`,
 	},
 	chat: {
-		json: `${API_BASE}/chat`,
-		audio: `${API_BASE}/chat/audio`,
+		json: (shouldPersist = 0) => `${API_BASE}/chat?persist=${shouldPersist}`,
+		audio: (shouldPersist = 0) =>
+			`${API_BASE}/chat/audio?persist=${shouldPersist}`,
 	},
 	feedback: {
 		create: `${API_BASE}/feedback`, // plain save

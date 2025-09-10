@@ -24,7 +24,7 @@ function RecordingBar({
 	answerSecondsDefault,
 	onContinue,
 }) {
-	const [answerSecondsLeft, setAnswerSecondsLeft] = useState(0);
+	const [answerSecondsLeft, setAnswerSecondsLeft] = useState(-1);
 	const answerTimerRef = useRef(null);
 	const onContinueRef = useRef(onContinue);
 	const hasFiredEndRef = useRef(false); // local one-shot guard
@@ -37,16 +37,12 @@ function RecordingBar({
 	useEffect(() => {
 		onContinueRef.current = onContinue;
 	}, [onContinue]);
-
-	// Start/stop the local countdown when in Q&A and answer window is active.
 	useEffect(() => {
 		if (inQA && answerActive) {
-			// reset any prior
 			if (answerTimerRef.current) {
 				clearInterval(answerTimerRef.current);
 				answerTimerRef.current = null;
 			}
-
 			hasFiredEndRef.current = false;
 			setAnswerSecondsLeft(answerSecondsDefault || 30);
 
@@ -55,13 +51,10 @@ function RecordingBar({
 					if (prev <= 1) {
 						clearInterval(answerTimerRef.current);
 						answerTimerRef.current = null;
-
-						// behaves like clicking Continue
 						if (!hasFiredEndRef.current) {
 							hasFiredEndRef.current = true;
 							onContinueRef.current?.("timeout");
 						}
-
 						return 0;
 					}
 					return prev - 1;
@@ -191,30 +184,30 @@ function AdvanceSlideButton({
 export default function PDFViewer() {
 	const { sessionId } = useSession();
 	const {
-		isPaused,
-		isRecording,
-		recordingTime,
-		startRecording,
-		interventionState,
 		answerActive,
-		endAnswerWindow,
 		answerSecondsDefault,
-		setSelectedAssignment: onAssignmentChange,
+		endAnswerWindow,
 		handleSlideAdvance: onSlideAdvance,
 		handleSlideLockTriggered: onSlideLockTriggered,
-		setSlideTimestamps: onSlideTimestampsChange,
+		interventionState,
+		isPaused,
+		isRecording,
+		numPages,
+		recordingTime,
+		setNumPages,
+		setSelectedAssignment: onAssignmentChange,
+		setSlideTimestamps,
+		slideTimestamps,
+		startRecording,
 	} = useAppContext();
 
 	const [uploadedFile, setUploadedFile] = useState(null);
-	const [numPages, setNumPages] = useState(null);
 	const [pageNumber, setPageNumber] = useState(1);
 	const [scale, setScale] = useState(1.0);
 	const [error, setError] = useState(null);
 	const [isLocked, setIsLocked] = useState(false);
 	const [furthestVisited, setFurthestVisited] = useState(1);
 	const [showRecordModal, setShowRecordModal] = useState(false);
-	// Slide timestamp tracking for audio splitting
-	const [slideTimestamps, setSlideTimestamps] = useState([]);
 
 	// ref to hidden replace-file input (for "upload different file")
 	const replaceInputRef = useRef(null);
@@ -249,7 +242,7 @@ export default function PDFViewer() {
 				lastLockTriggerSlideRef.current = null;
 			}
 		}
-	}, [isInterventionComplete, isLocked, pageNumber]);
+	}, [isInterventionComplete, isLocked]);
 
 	// Initialize first slide stamp at 0s when recording starts; clear after a true end
 	useEffect(() => {
@@ -263,13 +256,7 @@ export default function PDFViewer() {
 		if (!isRecording && !isPaused && slideTimestamps.length > 0) {
 			setSlideTimestamps([]);
 		}
-	}, [isRecording, isPaused, slideTimestamps]);
-
-	useEffect(() => {
-		if (slideTimestamps.length) {
-			onSlideTimestampsChange?.(slideTimestamps);
-		}
-	}, [slideTimestamps, onSlideTimestampsChange]);
+	}, [isRecording, isPaused, slideTimestamps, setSlideTimestamps]);
 
 	const handleFileUpload = async (event) => {
 		const file = event.target.files && event.target.files[0];
@@ -434,10 +421,19 @@ export default function PDFViewer() {
 	};
 
 	const handleUploadDifferent = () => {
-		// reset so choosing the same file fires onChange
+		// reset visible state to make selection feel fresh
+		setUploadedFile(null);
+		setNumPages(null);
+		setPageNumber(1);
+		setFurthestVisited(1);
+		setIsLocked(false);
+		unlockedSlidesRef.current.clear();
+
+		// clear and click hidden input; same-file reselect will trigger onChange
 		if (replaceInputRef.current) replaceInputRef.current.value = null;
 		// Defer click until after any state updates
 		setTimeout(() => replaceInputRef.current?.click(), 0);
+
 		setShowRecordModal(false);
 	};
 
@@ -572,7 +568,11 @@ export default function PDFViewer() {
 							file={uploadedFile}
 							onLoadSuccess={onDocumentLoadSuccess}
 							onLoadError={onDocumentLoadError}
-							loading={<div>Loading PDF...</div>}
+							loading={
+								<div className="pdf-loading">
+									<p>Loading PDF...</p>
+								</div>
+							}
 							error={<div>Failed to load PDF</div>}
 							noData={<div>No PDF file specified</div>}
 						>
