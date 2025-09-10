@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 
 import AppProvider from "./contexts/AppContext";
 import AuthProvider from "./contexts/AuthContext";
+import CheckpointProvider from "./contexts/CheckpointContext";
 
 import Dashboard from "./components/professor/Dashboard";
 import LandingPage from "./components/LandingPage";
@@ -58,9 +59,11 @@ export default function App() {
 	const { sessionId } = useSession();
 	return (
 		<AuthProvider>
-			<AppProvider sessionId={sessionId}>
-				<AppRoutes />
-			</AppProvider>
+			<CheckpointProvider>
+				<AppProvider sessionId={sessionId}>
+					<AppRoutes />
+				</AppProvider>
+			</CheckpointProvider>
 		</AuthProvider>
 	);
 }
