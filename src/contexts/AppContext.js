@@ -5,7 +5,6 @@ import {
 	useMemo,
 	useRef,
 	useState,
-	useReducer,
 } from "react";
 
 import TTSService from "../TTSService";
@@ -20,12 +19,15 @@ import {
 	buildFollowUpContext,
 } from "../utils";
 import { INTERVENTION_STATES } from "../constants";
+import { useCheckpoint } from "../hooks/useCheckpoint";
 
 export const AppContext = createContext(null);
 
 const MAX_PRESENTATION_SECONDS = 10 * 60; // 10 minutes safeguard
 
 export default function AppProvider({ children, sessionId }) {
+	const { readCheckpoint, writeCheckpoint } = useCheckpoint() || {};
+
 	// Chat state
 	const [messages, setMessages] = useState([]);
 	const [selectedAssignment, setSelectedAssignment] = useState("");
@@ -38,7 +40,7 @@ export default function AppProvider({ children, sessionId }) {
 	const [recordingTime, setRecordingTime] = useState(0);
 	const [recordingTimer, setRecordingTimer] = useState(null);
 	const [currentRecordingSegment, setCurrentRecordingSegment] = useState(null);
-	const [answerWindowOpen, setAnswerWindowOpen] = useState(false);
+	const [numPages, setNumPages] = useState(0);
 
 	// Intervention state — SINGLE SOURCE OF TRUTH:
 	// 'student_presenting', 'ai_questioning', 'questions_batch_complete', 'final_complete', 'inactive'
@@ -46,7 +48,6 @@ export default function AppProvider({ children, sessionId }) {
 		INTERVENTION_STATES.inactive
 	);
 	const [questionsAsked, setQuestionsAsked] = useState(0);
-	const questionInFlightRef = useRef(false);
 	const [currentSlideRange, setCurrentSlideRange] = useState(null);
 	const [qaSlideQueue, setQaSlideQueue] = useState([]); // e.g., [start, start+1]
 	const [isCurrentBatchFinal, setIsCurrentBatchFinal] = useState(false);
@@ -56,44 +57,16 @@ export default function AppProvider({ children, sessionId }) {
 	const [slideTimestamps, setSlideTimestamps] = useState([]);
 	const [qaTimestamps, setQaTimestamps] = useState([]);
 
-	const [batchFlags, dispatchFlags] = useReducer(
-		(state, action) => {
-			switch (action.type) {
-				case "RESET_FOR_NEW_BATCH":
-					return {
-						completing: false,
-						awaitingFollowUp: false,
-						isFinal: !!action.isFinal,
-					};
-				case "MARK_COMPLETING":
-					return { ...state, completing: true };
-				case "ASKED_FOLLOWUP":
-					return { ...state, awaitingFollowUp: true };
-				case "CONSUME_FOLLOWUP_ANSWER":
-					return { ...state, awaitingFollowUp: false };
-				case "CLEAR_FINAL_FLAG":
-					return { ...state, isFinal: false };
-				default:
-					return state;
-			}
-		},
-		{
-			completing: false,
-			awaitingFollowUp: false,
-			isFinal: false,
-		}
-	);
+	const questionInFlightRef = useRef(false);
 
 	// Answer-window (countdown) state
 	const answerStartRef = useRef(null); // already present (used for QA ranges)
 	const answerDefaultSecondsRef = useRef(30); // default countdown per requirement
-
-	// live mirrors to avoid closure staleness during fast transitions
-	const qaSlideQueueRef = useRef([]);
-	const isCurrentBatchFinalRef = useRef(false);
-	const currentSlideRangeRef = useRef(null);
+	const answerWindowOpenRef = useRef(false);
+	const completingBatchRef = useRef(false);
+	const followUpAskedRef = useRef(false);
 	const interventionRef = useRef(interventionState);
-	const questionsAskedRef = useRef(questionsAsked);
+	const currentQASlideRef = useRef(null);
 
 	// track live values to avoid stale closures
 	const recRef = useRef(isRecording);
@@ -127,6 +100,7 @@ export default function AppProvider({ children, sessionId }) {
 					if (!currentSlideRange) return;
 					const followUpPrompt = buildFollowUpContext(currentSlideRange);
 					interventionMessages = [{ role: "user", content: followUpPrompt }];
+					currentQASlideRef.current = null;
 				} else {
 					if (!slideNumber) return;
 
@@ -146,6 +120,7 @@ export default function AppProvider({ children, sessionId }) {
 
 					interventionMessages = [{ role: "user", content: contextMessage }];
 					slideNumberForPayload = String(slideNumber);
+					currentQASlideRef.current = slideNumber;
 				}
 
 				let data;
@@ -175,7 +150,7 @@ export default function AppProvider({ children, sessionId }) {
 
 				if (data?.response) {
 					finalizeAssistantMessage(pendingId, data.response);
-					questionInFlightRef.current = true;
+					questionInFlightRef.current = true; // arm answer window for when TTS stops
 					TTSService.speak(data.response);
 				} else {
 					finalizeAssistantMessage(pendingId, "...");
@@ -194,25 +169,16 @@ export default function AppProvider({ children, sessionId }) {
 		async (_userMessage, _currentSlideRange) => {
 			// Use the ref to avoid stale-closure races
 			if (interventionRef.current !== INTERVENTION_STATES.questioning) return;
-			// If we're already completing, ignore duplicate "end" triggers
-			if (batchFlags.completing) return;
+			if (completingBatchRef.current) return;
 
-			// Use a stable snapshot of where we are in the batch before deciding the next action.
-			const currentIndex = questionsAskedRef.current ?? 0;
+			let nextIndex = (questionsAsked || 0) + 1;
+			setQuestionsAsked(nextIndex);
 
-			const slidesTotal = qaSlideQueueRef.current.length;
-			const isFinal = !!isCurrentBatchFinalRef.current;
-			const totalNeeded = slidesTotal + (isFinal ? 1 : 0);
-
-			if (currentIndex < slidesTotal - 1) {
-				// We have more slide questions to ask.
-				const nextIndex = currentIndex + 1;
-				const nextSlide = qaSlideQueueRef.current[nextIndex];
+			if (nextIndex < qaSlideQueue.length && qaSlideQueue[nextIndex] != null) {
+				const nextSlide = qaSlideQueue[nextIndex];
 
 				try {
-					// Commit the increment *now* that we've decided to ask.
-					setQuestionsAsked(nextIndex);
-					questionsAskedRef.current = nextIndex;
+					completingBatchRef.current = false;
 					await askQuestion({
 						slideNumber: nextSlide,
 						audioSegment: currentRecordingSegment,
@@ -220,16 +186,20 @@ export default function AppProvider({ children, sessionId }) {
 				} catch (e) {
 					console.error("Failed to generate next slide question:", e);
 				}
+
 				return;
 			}
 
-			if (isFinal && currentIndex < totalNeeded - 1) {
+			const finishedAllSlideQs = nextIndex === qaSlideQueue.length;
+			if (
+				isCurrentBatchFinal &&
+				finishedAllSlideQs &&
+				!followUpAskedRef.current
+			) {
 				try {
-					// final follow-up is the last "question" — bump the counter to reflect that we’re asking it
-					dispatchFlags({ type: "ASKED_FOLLOWUP" }); // keeps reducer in sync
-					const nextIndex = currentIndex + 1;
-					setQuestionsAsked(nextIndex);
-					questionsAskedRef.current = nextIndex;
+					completingBatchRef.current = false;
+					followUpAskedRef.current = true;
+
 					await askQuestion({
 						isFollowUp: true,
 						audioSegment: currentRecordingSegment,
@@ -241,20 +211,11 @@ export default function AppProvider({ children, sessionId }) {
 				return;
 			}
 
-			if (batchFlags.awaitingFollowUp) {
-				dispatchFlags({ type: "CONSUME_FOLLOWUP_ANSWER" });
-			}
-
 			// Otherwise, we’re done with this batch
-			dispatchFlags({ type: "MARK_COMPLETING" });
+			completingBatchRef.current = true;
 			const nextState = isCurrentBatchFinal
 				? INTERVENTION_STATES.final_complete
 				: INTERVENTION_STATES.batch_complete;
-
-			if (nextState === INTERVENTION_STATES.batch_complete) {
-				setIsCurrentBatchFinal(false);
-				dispatchFlags({ type: "CLEAR_FINAL_FLAG" });
-			}
 
 			setInterventionState(nextState);
 
@@ -271,7 +232,13 @@ export default function AppProvider({ children, sessionId }) {
 			finalizeAssistantMessage(pendingId, vc_response);
 			TTSService.speak(vc_response);
 		},
-		[askQuestion, currentRecordingSegment, batchFlags, isCurrentBatchFinal]
+		[
+			askQuestion,
+			currentRecordingSegment,
+			isCurrentBatchFinal,
+			qaSlideQueue,
+			questionsAsked,
+		]
 	);
 
 	// —— Recording controls ————————————————————————————————
@@ -290,7 +257,9 @@ export default function AppProvider({ children, sessionId }) {
 	}, [mediaRecorder, recordingTimer]);
 
 	const resumeRecording = useCallback(() => {
-		if (isPaused && mediaRecorder && mediaRecorder.state === "paused") {
+		if (!isPaused) return;
+
+		if (mediaRecorder && mediaRecorder.state === "paused") {
 			mediaRecorder.resume();
 			setIsPaused(false);
 			const timer = setInterval(
@@ -315,7 +284,11 @@ export default function AppProvider({ children, sessionId }) {
 			};
 
 			recorder.onstop = () => {
-				const blob = new Blob(audioChunks, { type: "audio/wav" });
+				const mime = recorder.mimeType || "audio/webm";
+				const blob = new Blob(audioChunks, {
+					type: mime,
+				});
+
 				setCurrentRecordingSegment(blob);
 				stream.getTracks().forEach((t) => t.stop());
 			};
@@ -360,17 +333,15 @@ export default function AppProvider({ children, sessionId }) {
 			answerStartRef.current = recordingTime;
 			answerDefaultSecondsRef.current = seconds;
 			setAnswerActive(true);
-
-			// prevents double ending
-			setAnswerWindowOpen(true);
+			answerWindowOpenRef.current = true;
 		},
 		[recordingTime]
 	);
 
 	const endAnswerWindow = useCallback(async () => {
 		// Idempotent: only allow once while the window is open
-		if (!answerWindowOpen) return;
-		setAnswerWindowOpen(false);
+		if (!answerWindowOpenRef.current) return;
+		answerWindowOpenRef.current = false;
 
 		if (!answerActive) return;
 		setAnswerActive(false);
@@ -386,13 +357,18 @@ export default function AppProvider({ children, sessionId }) {
 			const end = recordingTime;
 
 			if (end > start) {
-				setQaTimestamps((prev) => [...prev, { start, end }]);
+				// Attach slideNumber if we have a current slide range
+				const slideNumber =
+					currentQASlideRef.current ?? currentSlideRange?.start ?? null;
+				setQaTimestamps((prev) => [
+					...prev,
+					{ start, end, ...(slideNumber ? { slideNumber } : {}) },
+				]);
 			}
 
 			answerStartRef.current = null;
 		}
 
-		console.debug("[AnswerWindow] advancing decision…");
 		// Advance the intervention flow: ask follow-up (Q2) or finish.
 		try {
 			await handleInterventionResponse(
@@ -408,7 +384,6 @@ export default function AppProvider({ children, sessionId }) {
 		handleInterventionResponse,
 		currentSlideRange,
 		recordingTime,
-		answerWindowOpen,
 	]);
 
 	const getLatestRecording = useCallback(() => {
@@ -431,7 +406,8 @@ export default function AppProvider({ children, sessionId }) {
 			// Set up a temporary handler for when recording stops
 			const originalOnStop = mediaRecorder.onstop;
 			mediaRecorder.onstop = (event) => {
-				const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+				const mime = mediaRecorder.mimeType || "audio/webm";
+				const audioBlob = new Blob(audioChunks, { type: mime });
 				originalOnStop && originalOnStop(event);
 				resolve(audioBlob);
 			};
@@ -489,6 +465,23 @@ export default function AppProvider({ children, sessionId }) {
 				pauseRecording();
 			}
 
+			setSlideTimestamps((prev) => {
+				const sentinel = {
+					slideNumber: slideNumber + 1,
+					timestamp: recordingTime,
+				};
+				// avoid accidental duplicates if this function fires twice
+				const already = prev.some(
+					(t) =>
+						t.slideNumber === sentinel.slideNumber &&
+						t.timestamp === sentinel.timestamp
+				);
+				return already ? prev : [...prev, sentinel];
+			});
+
+			followUpAskedRef.current = false;
+			completingBatchRef.current = false;
+
 			// Range for the just-presented slides (e.g., 1–2, 3–4, or last single if odd number)
 			const slideRange = calculatePresentedSlideRange(slideNumber);
 
@@ -502,15 +495,14 @@ export default function AppProvider({ children, sessionId }) {
 
 			// Start intervention session
 			setInterventionState(INTERVENTION_STATES.questioning);
-			dispatchFlags({ type: "RESET_FOR_NEW_BATCH", isFinal: isLastBatch });
 			setQuestionsAsked(0);
-			questionsAskedRef.current = 0;
 			setCurrentSlideRange(slideRange);
 			setBatchStartIndex(messages.length);
 			setIsCurrentBatchFinal(!!isLastBatch);
 
 			// Trigger AI intervention with context and recording
 			await handleAIIntervention(slideRange);
+			questionInFlightRef.current = true;
 		},
 		[
 			handleAIIntervention,
@@ -518,6 +510,7 @@ export default function AppProvider({ children, sessionId }) {
 			isRecording,
 			pauseRecording,
 			messages.length,
+			recordingTime,
 		]
 	);
 
@@ -556,21 +549,28 @@ export default function AppProvider({ children, sessionId }) {
 		}
 	}, [isRecording, recordingTime, stopRecording]);
 
+	// ——— Persist slide timestamps when they change ———
 	useEffect(() => {
-		qaSlideQueueRef.current = qaSlideQueue;
-	}, [qaSlideQueue]);
+		if (!writeCheckpoint || !sessionId) return;
+		writeCheckpoint(sessionId, { slideTimestamps });
+	}, [slideTimestamps, sessionId, writeCheckpoint]);
+
+	// ——— Persist QA timestamps when they change ———
+	useEffect(() => {
+		if (!writeCheckpoint || !sessionId) return;
+		writeCheckpoint(sessionId, { qaTimestamps });
+	}, [qaTimestamps, sessionId, writeCheckpoint]);
 
 	useEffect(() => {
-		isCurrentBatchFinalRef.current = isCurrentBatchFinal;
-	}, [isCurrentBatchFinal]);
-
-	useEffect(() => {
-		currentSlideRangeRef.current = currentSlideRange;
-	}, [currentSlideRange]);
-
-	useEffect(() => {
-		questionsAskedRef.current = questionsAsked;
-	}, [questionsAsked]);
+		if (!readCheckpoint) return;
+		const saved = readCheckpoint(sessionId);
+		if (saved?.slideTimestamps?.length) {
+			setSlideTimestamps(saved.slideTimestamps);
+		}
+		if (saved?.qaTimestamps?.length) {
+			setQaTimestamps(saved.qaTimestamps);
+		}
+	}, [sessionId, readCheckpoint]);
 
 	// Centralized TTS → pause/resume
 	// TTS listener: when VC stops speaking, resume + arm the VAD
@@ -587,16 +587,17 @@ export default function AppProvider({ children, sessionId }) {
 			// Only open the answer window when a *question's* speech just ended.
 			if (
 				pausedByAIRef.current &&
-				recRef.current &&
-				questionInFlightRef.current
+				questionInFlightRef.current &&
+				interventionRef.current === INTERVENTION_STATES.questioning
 			) {
 				pausedByAIRef.current = false;
 				questionInFlightRef.current = false; // consume the in-flight question
 
-				if (interventionRef.current === INTERVENTION_STATES.questioning) {
+				if (pausedRef.current) {
 					resumeRecording?.();
-					startAnswerWindow();
 				}
+
+				startAnswerWindow();
 			}
 		};
 
@@ -617,13 +618,14 @@ export default function AppProvider({ children, sessionId }) {
 			isPaused,
 			isRecording,
 			messages,
+			numPages,
 			qaTimestamps,
 			questionsAsked,
 			questionsTarget: qaSlideQueue.length + (isCurrentBatchFinal ? 1 : 0),
 			recordingTime,
 			selectedAssignment,
+			setNumPages,
 			setSelectedAssignment,
-			setInterventionState,
 			setSlideTimestamps,
 			slideTimestamps,
 			startRecording,
@@ -636,17 +638,18 @@ export default function AppProvider({ children, sessionId }) {
 			handleSlideAdvance,
 			handleSlideLockTriggered,
 			interventionState,
+			isCurrentBatchFinal,
 			isPaused,
 			isRecording,
 			messages,
+			numPages,
+			qaSlideQueue.length,
 			qaTimestamps,
 			questionsAsked,
-			qaSlideQueue.length,
 			recordingTime,
 			selectedAssignment,
 			slideTimestamps,
 			startRecording,
-			isCurrentBatchFinal,
 		]
 	);
 
