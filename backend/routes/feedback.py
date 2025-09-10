@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from flask import Blueprint, request
 
 from utils.http import ok, bad_request
@@ -8,6 +9,8 @@ from utils.decorators import require_json
 from services.database_service import (
     save_feedback,
     get_latest_feedback_for_session,
+    add_conversations_bulk,
+    update_session,
 )
 from services.feedback_service import generate_feedback
 from services.media_service import get_presigned_slide_urls
@@ -74,11 +77,9 @@ def api_save_feedback_route():
         improvements=data.get("improvements"),
     )
 
-    return ok(fb.dict(), 201)
+    return ok({"id": fb.id}, 201)
 
 
-# TODO: This doesn't need to return anything anymore...
-# TODO: This should handle cleanup, not the front end...
 @bp.post("/feedback/generate")
 def api_generate_and_save_feedback():
     """
@@ -90,17 +91,21 @@ def api_generate_and_save_feedback():
     try:
 
         is_form = request.content_type and "multipart/form-data" in request.content_type
+        pdf_slide_count_raw = None
 
         # --- Extract inputs ---
         if is_form:
             # multipart
             session_id = request.form.get("sessionId")
+            student_name = request.form.get("studentName") or None
+            selected_assignment = request.form.get("selectedAssignment") or None
+            pdf_slide_count_raw = request.form.get("pdfSlideCount") or None
+
             if not session_id:
                 return bad_request("sessionId is required")
 
             try:
                 messages_str = request.form.get("messages")
-                # messages = (messages and __import__("json").loads(messages)) or []
                 messages = json.loads(messages_str) if messages_str else []
             except Exception:
                 messages = []
@@ -130,14 +135,19 @@ def api_generate_and_save_feedback():
             # json
             data = request.get_json(silent=True) or {}
             session_id = data.get("sessionId")
+            student_name = data.get("studentName") or None
             if not session_id:
                 return bad_request("sessionId is required")
 
+            selected_assignment = data.get("selectedAssignment") or None
             messages = data.get("messages") or []
             slide_timestamps = data.get("slideTimestamps") or None
             qa_timestamps = data.get("qaTimestamps") or None
             recording = None  # only via multipart
             pdf_session_id = data.get("pdfSessionId") or None
+            pdf_slide_count_raw = data.get("pdfSlideCount") or None
+
+        pdf_slide_count = int(pdf_slide_count_raw) if pdf_slide_count_raw else None
 
         # --- Call generator ---
         structured = generate_feedback(
@@ -146,9 +156,11 @@ def api_generate_and_save_feedback():
             presentation_recording=recording,
             slide_timestamps=slide_timestamps,
             pdf_session_id=pdf_session_id,
-            pdf_slide_count=None,
+            pdf_slide_count=pdf_slide_count,
             qa_timestamps=qa_timestamps,
             asset_session_id=session_id,
+            selected_assignment=selected_assignment,
+            student_name=student_name,
         )
 
         # Build a single “overall” paragraph by concatenating the parts we produced
@@ -179,6 +191,48 @@ def api_generate_and_save_feedback():
             strengths=None,
             improvements=None,
         )
+
+        # ✅ Mark session completed at this moment — no dead data before this point
+        try:
+            update_session(
+                session_id,
+                {
+                    "completedAt": datetime.now(timezone.utc),
+                    "status": "completed",
+                },
+            )
+        except Exception as e:
+            # Non-fatal: feedback is still saved; log for observability
+            print(f"⚠️ Failed to mark session completed: {e}")
+
+        # Persist conversation now (bulk) to have a DB story for the run
+        try:
+            if messages and isinstance(messages, list):
+                items = []
+                for m in messages:
+                    role = (m.get("role") or "").strip()
+                    content = (m.get("content") or "").strip()
+                    if not role or not content:
+                        continue
+
+                    items.append(
+                        {
+                            "sessionId": session_id,
+                            "role": (
+                                "assistant"
+                                if role == "assistant"
+                                else "student" if role in ("user", "student") else role
+                            ),
+                            "content": content,
+                            "slideNumber": None,
+                            "timestamp": None,
+                        }
+                    )
+
+                if items:
+                    add_conversations_bulk(items)
+        except Exception as e:
+            print(f"⚠️ Failed to persist final conversation: {e}")
 
         # Return the saved record + the structured data for the UI
         payload = fb.dict()

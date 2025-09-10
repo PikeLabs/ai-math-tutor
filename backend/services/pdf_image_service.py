@@ -46,12 +46,6 @@ def save_slide_images(pdf_path, session_id):
         Dictionary mapping slide numbers to image paths
     """
     try:
-        print(f"📄 Starting PDF processing: {pdf_path}")
-        print(f"📁 PDF file exists: {os.path.exists(pdf_path)}")
-        print(
-            f"📏 PDF file size: {os.path.getsize(pdf_path) if os.path.exists(pdf_path) else 'N/A'} bytes"
-        )
-
         if not PDF_PROCESSING_AVAILABLE:
             print("⚠️ PDF processing not available - skipping image extraction")
             print("💡 The feedback will work but without slide images")

@@ -1,4 +1,5 @@
 import os, tempfile, json, time, uuid, shutil
+from typing import Optional, List, Dict
 from openai import OpenAI
 
 from services.database_service import upsert_slide_asset
@@ -8,9 +9,10 @@ from lib.aws import (
     build_key,
     build_s3_filename,
     S3_AUDIO_SESSIONS_FOLDER,
+    S3_SLIDE_IMAGES_FOLDER,
 )
-from services.pdf_image_service import cleanup_local_pdf_images
-from config.paths import AUDIO_SESSIONS_DIR
+from services.pdf_image_service import cleanup_local_pdf_images, save_slide_images
+from config.paths import AUDIO_SESSIONS_DIR, ASSIGNMENTS_DIR
 
 # Try to import pydub, fallback if not available
 try:
@@ -70,8 +72,22 @@ def _normalize_slide_ranges(slide_timestamps):
     # Sort by timestamp; convert to ms
     items = sorted(slide_timestamps, key=lambda x: float(x.get("timestamp", 0.0)))
     out = []
+
     for i, t in enumerate(items):
         start_ms = int(float(t.get("timestamp", 0.0)) * 1000)
+
+        # If this is the very last item, check for sentinel behavior
+        if i == len(items) - 1 and i > 0:
+            prev_slide = int(items[i - 1].get("slideNumber", 0) or 0)
+            this_slide = int(t.get("slideNumber", 0) or 0)
+            # Sentinel if it bumped slideNumber and has no “next”
+            if this_slide > prev_slide:
+                # Cap the prior segment’s end_ms at this sentinel boundary
+                if out:
+                    out[-1]["end_ms"] = max(0, start_ms)
+                # No segment for the sentinel itself
+                break
+
         next_ms = (
             int(float(items[i + 1]["timestamp"]) * 1000) if i + 1 < len(items) else None
         )
@@ -95,6 +111,82 @@ def _full_audio(audio_file_path):
             "end_time": None,
         }
     ]
+
+
+def _concat_presentation_tx(slide_audio_transcripts) -> str:
+    """
+    # Build a rolled-up presentation transcript from slide transcripts (ordered)
+    """
+    if not slide_audio_transcripts:
+        return ""
+
+    ordered = [
+        slide_audio_transcripts[k] for k in sorted(slide_audio_transcripts.keys())
+    ]
+    parts = [
+        (s.get("transcript") or "").strip()
+        for s in ordered
+        if (s.get("transcript") or "").strip()
+    ]
+
+    return "\n\n".join(parts)
+
+
+def _is_control_line(text: str) -> bool:
+    if not text:
+        return False
+    t = text.strip()
+    return (
+        t.startswith("Thanks for those answers!")
+        or t.startswith("Please click 'Next'")
+        or "feedback is being generated" in t
+    )
+
+
+def _collect_assistant_questions(conversation_history):
+    # Take assistant lines that are not control/closing lines
+    out = []
+    for m in conversation_history or []:
+        if (m.get("role") == "assistant") and (m.get("content") or "").strip():
+            c = m["content"].strip()
+            if not _is_control_line(c):
+                out.append(c)
+    return out
+
+
+def _label_for_student(student_name: str | None) -> str:
+    return student_name.strip().upper() if student_name else "STUDENT"
+
+
+def _compute_overall(structured: dict) -> dict:
+    met = 0
+    considered = 0
+
+    def _bump(status: str):
+        nonlocal met, considered
+        if status in ("met", "not_met"):
+            considered += 1
+            if status == "met":
+                met += 1
+
+    # Slide LO’s
+    for s in structured.get("slides") or []:
+        fb = s.get("feedback") or {}
+        for k in ("content_structuring", "delivery", "impromptu_response", "composure"):
+            _bump((fb.get(k) or {}).get("status"))
+
+    # (Optional) Top-level Q&A section, if used later
+    qa = structured.get("qa_feedback") or {}
+    for k in ("impromptu_response", "composure"):
+        _bump((qa.get(k) or {}).get("status"))
+
+    ratio = (met / considered) if considered else 0
+    return {
+        "met": met,
+        "considered": considered,
+        "score": int(round(ratio * 100)),
+        "text": f"{met}/{considered} met" if considered else "No score",
+    }
 
 
 FEEDBACK_SYSTEM_PROMPT = """You are a tough, no-nonsense professor evaluating a student's startup pitch. You have three inputs: (1) the slide deck text and structure (SLIDES), (2) the spoken presentation transcript with any timestamps (AUDIO), and (3) the post-pitch conversation between the "VC" and the student (DIALOGUE). Your job is to deliver a single dense paragraph of blunt, specific feedback that maps directly to four learning objectives. Be candid, concrete, and harsh-but-fair; prioritize weaknesses and what to fix next. Avoid niceties, padding, or generic praise. No lists, no line breaks, no emojis.
@@ -159,13 +251,13 @@ def save_audio_segments(session_id, audio_segments):
         for segment in audio_segments:
             slide_number = segment["slideNumber"]
             temp_audio_path = segment["audio_path"]
+            duration_ms = segment.get("duration_ms")
 
             # Copy to session directory with permanent name
-            session_dir = os.path.join(AUDIO_SESSIONS_DIR, session_id)
-            os.makedirs(session_dir, exist_ok=True)
             permanent_path = os.path.join(session_dir, f"slide_{slide_number}.wav")
             shutil.copy2(temp_audio_path, permanent_path)
 
+            s3_key = None
             try:
                 audio_filename = build_s3_filename(slide_number, "audio")
                 s3_key = build_key(
@@ -181,7 +273,7 @@ def save_audio_segments(session_id, audio_segments):
                     kind="audio",
                     s3_key=s3_key,
                     mime_type="audio/wav",
-                    duration_ms=None,
+                    duration_ms=duration_ms,
                 )
 
             except Exception as e:
@@ -195,7 +287,9 @@ def save_audio_segments(session_id, audio_segments):
                 print(f"⚠️ Failed to delete local audio segment {permanent_path}: {e}")
 
             saved_segments[slide_number] = {
-                "local_path": permanent_path,
+                "s3_key": s3_key,
+                "mime": "audio/wav",
+                "duration_ms": duration_ms,
             }
 
         # Save session metadata
@@ -259,7 +353,10 @@ def cleanup_old_audio_sessions(max_age_hours=24):
         print(f"⚠️ Error during audio cleanup: {e}")
 
 
-def split_audio_by_timestamps(audio_file_path, slide_timestamps):
+def split_audio_by_timestamps(
+    audio_file_path,
+    slide_timestamps,
+):
     """
     Split audio into segments based on slide timestamps
 
@@ -307,23 +404,28 @@ def split_audio_by_timestamps(audio_file_path, slide_timestamps):
                 print(f"🎵 Successfully loaded as WebM")
             except:
                 try:
-                    audio = AudioSegment.from_file(audio_file_path, format="mp4")
-                    print(f"🎵 Successfully loaded as MP4")
+                    audio = AudioSegment.from_file(audio_file_path, format="ogg")
+                    print(f"🎵 Successfully loaded as Ogg")
                 except:
-                    print(f"❌ Could not load audio in any supported format")
-                    raise e
-
-        print(f"🎵 Splitting audio based on {len(slide_timestamps)} timestamps")
+                    try:
+                        audio = AudioSegment.from_file(audio_file_path, format="mp4")
+                        print(f"🎵 Successfully loaded as MP4")
+                    except:
+                        print(f"❌ Could not load audio in any supported format")
+                        raise
 
         # Process each slide segment
         segments = []
         for r in ranges:
             start = max(0, int(r["start_ms"]))
             end = int(r["end_ms"]) if r["end_ms"] is not None else len(audio)
+
             if start >= end:
                 continue
 
             clip = audio[start:end]
+            dur_ms = len(clip)
+
             with tempfile.NamedTemporaryFile(
                 delete=False, suffix=f"_slide_{r['slideNumber']}.wav"
             ) as temp_segment:
@@ -334,8 +436,10 @@ def split_audio_by_timestamps(audio_file_path, slide_timestamps):
                         "audio_path": temp_segment.name,
                         "start_time": start / 1000.0,
                         "end_time": end / 1000.0,
+                        "duration_ms": dur_ms,
                     }
                 )
+
         return segments or full_audio_segment
 
     except Exception as e:
@@ -351,8 +455,10 @@ def generate_feedback(
     slide_timestamps=None,
     pdf_session_id=None,
     pdf_slide_count=None,
-    qa_timestamps=None,
+    qa_timestamps: Optional[List[Dict]] = None,
     asset_session_id=None,
+    selected_assignment=None,
+    student_name=None,
 ):
     """
     Generate slide-specific feedback based on the VC conversation and presentation recording
@@ -365,6 +471,7 @@ def generate_feedback(
         assignment_filename: PDF filename for slide image extraction
         pdf_session_id: Session ID from PDF upload for linking images
         pdf_slide_count: Actual number of slides in the PDF
+        qa_timestamps: { "slideNumber": int, "start": float, "end": float }
 
     Returns:
         Dictionary containing structured feedback data with session info
@@ -378,61 +485,95 @@ def generate_feedback(
                     f"  - Timestamp {i}: Slide {ts.get('slideNumber', '?')}, Time: {ts.get('timestamp', '?')}s"
                 )
 
-        # Handle audio splitting and transcription if recording is provided
-        slide_audio_transcripts = {}
-        qa_audio_transcripts = []
-        temp_files_to_cleanup = []
-        original_audio_segments = []
-        full_audio_temp_path = None
+        # --- Init / session globals ---
+        # { slideNumber: {transcript, start_time, end_time} }
+        slide_audio_transcripts: Dict[int, Dict] = {}
+        # [ {start_time, end_time, transcript}, ... ]
+        qa_audio_transcripts: List[Dict] = []
+        # { slideNumber: {question, answer, start_time, end_time} }
+        per_slide_qa: Dict[int, Dict] = {}
+        temp_files_to_cleanup: List[str] = []
+        original_audio_segments: List[Dict] = []
+        full_audio_temp_path: Optional[str] = None
 
-        if presentation_recording and slide_timestamps:
-            print("🔊 Processing slide-specific audio segments...")
+        effective_session_id = asset_session_id or str(uuid.uuid4())
+        image_session_id = pdf_session_id or effective_session_id
+
+        if presentation_recording:
+            ext = ".webm"
+            try:
+                mt = (getattr(presentation_recording, "mimetype", "") or "").lower()
+                fn = (getattr(presentation_recording, "filename", "") or "").lower()
+                if "ogg" in mt or fn.endswith(".ogg"):
+                    ext = ".ogg"
+                elif "webm" in mt or fn.endswith(".webm"):
+                    ext = ".webm"
+                # (optional: elif "mp4" in mt or fn.endswith(".mp4"): ext = ".mp4")
+            except Exception:
+                pass
 
             # Save recording to temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_audio:
                 if hasattr(presentation_recording, "read"):
                     temp_audio.write(presentation_recording.read())
                 else:
                     temp_audio.write(presentation_recording)
-                temp_audio_path = temp_audio.name
-                full_audio_temp_path = temp_audio_path  # keep for QA slicing
-                temp_files_to_cleanup.append(temp_audio_path)
 
+                # temp_audio_path = temp_audio.name
+                full_audio_temp_path = temp_audio.name  # keep for QA slicing
+                temp_files_to_cleanup.append(full_audio_temp_path)
+
+        # --- Transcribe per-slide audio if we have timestamps ---
+        if full_audio_temp_path and slide_timestamps:
             try:
-                # Debug the received audio file
-                print(
-                    f"🔧 DEBUG: About to split audio with {len(slide_timestamps)} timestamps"
-                )
-                print(f"🔧 DEBUG: Audio file path: {temp_audio_path}")
-                print(
-                    f"🔧 DEBUG: Audio file size: {os.path.getsize(temp_audio_path)} bytes"
-                )
 
-                # Try to get audio info
+                _split_ts = slide_timestamps
                 try:
-                    test_audio = AudioSegment.from_file(temp_audio_path)
-                    print(f"🔧 DEBUG: Audio duration: {len(test_audio)/1000:.1f}s")
-                    print(f"🔧 DEBUG: Audio sample rate: {test_audio.frame_rate}Hz")
-                    print(f"🔧 DEBUG: Audio channels: {test_audio.channels}")
-                except Exception as audio_info_error:
-                    print(f"🔧 DEBUG: Cannot read audio info: {audio_info_error}")
+                    if (
+                        qa_timestamps
+                        and isinstance(slide_timestamps, list)
+                        and len(slide_timestamps) >= 2
+                    ):
+                        # compute first Q&A start (seconds)
+                        starts = [
+                            float(q.get("start", 0) or 0.0)
+                            for q in (qa_timestamps or [])
+                            if q.get("start") is not None
+                        ]
 
+                        qa_start = min(starts) if starts else None
+
+                        # sort slide timestamps by time
+                        _sorted = sorted(
+                            slide_timestamps,
+                            key=lambda x: float(x.get("timestamp", 0.0) or 0.0),
+                        )
+                        last_ts = _sorted[-1]
+                        prev_ts = _sorted[-2]
+                        last_time = float(last_ts.get("timestamp", 0.0) or 0.0)
+                        prev_slide = int(prev_ts.get("slideNumber", 0) or 0)
+                        last_slide = int(last_ts.get("slideNumber", 0) or 0)
+
+                        # if the last timestamp is effectively the Q&A start (±1.0s tolerance),
+                        # keep sentinel; downstream splitter will ignore emitting it
+                        if (
+                            qa_start is not None
+                            and abs(last_time - qa_start) <= 1.0
+                            and last_slide > prev_slide
+                        ):
+                            _split_ts = _sorted
+
+                except Exception as _e:
+                    # non-fatal; fall through with original slide_timestamps
+                    _split_ts = slide_timestamps
+
+                # Split using timestamps and transcribe each segment
                 audio_segments = split_audio_by_timestamps(
-                    temp_audio_path, slide_timestamps
-                )
-                print(
-                    f"🔧 DEBUG: split_audio_by_timestamps returned {len(audio_segments)} segments"
+                    full_audio_temp_path, _split_ts
                 )
 
-                # Check if splitting actually worked (more than one segment)
                 if len(audio_segments) >= 1:
-                    print(
-                        f"✅ Audio successfully split into {len(audio_segments)} segments"
-                    )
                     original_audio_segments = audio_segments.copy()
-                    print(
-                        f"🔧 DEBUG: original_audio_segments set with {len(original_audio_segments)} segments"
-                    )
 
                     # Transcribe each segment
                     for segment in audio_segments:
@@ -443,6 +584,7 @@ def generate_feedback(
                                 "start_time": segment["start_time"],
                                 "end_time": segment["end_time"],
                             }
+
                             temp_files_to_cleanup.append(segment["audio_path"])
                         except Exception as e:
                             print(
@@ -453,66 +595,75 @@ def generate_feedback(
                                 "start_time": segment["start_time"],
                                 "end_time": segment["end_time"],
                             }
+
+                    # Persist per-slide audio to S3 so slide audio URLs can resolve
+                    if original_audio_segments:
+                        try:
+                            segments_to_save = original_audio_segments
+                            if pdf_slide_count:
+                                segments_to_save = [
+                                    s
+                                    for s in original_audio_segments
+                                    if int(s.get("slideNumber", 0) or 0)
+                                    <= int(pdf_slide_count)
+                                ]
+
+                            if segments_to_save:
+                                save_audio_segments(
+                                    effective_session_id, segments_to_save
+                                )
+                        except Exception as e:
+                            print(f"⚠️ Failed to persist audio segments: {e}")
+
                 else:
-                    # Create fake segments based on timestamps for feedback structure
+                    # Fallback: single full transcript split roughly by slide count
                     if slide_timestamps and len(slide_timestamps) > 1:
-                        full_transcript = transcribe_recording(temp_audio_path)
+                        full_transcript = transcribe_recording(full_audio_temp_path)
+                        words = full_transcript.split()
+                        words_per_slide = max(1, len(words) // len(slide_timestamps))
+
                         for i, timestamp_data in enumerate(slide_timestamps):
                             slide_num = timestamp_data["slideNumber"]
-                            # Split transcript roughly by slide count
-                            words = full_transcript.split()
-                            words_per_slide = len(words) // len(slide_timestamps)
                             start_word = i * words_per_slide
+
                             end_word = (
                                 (i + 1) * words_per_slide
                                 if i < len(slide_timestamps) - 1
                                 else len(words)
                             )
+
                             slide_transcript = " ".join(words[start_word:end_word])
 
                             slide_audio_transcripts[slide_num] = {
                                 "transcript": slide_transcript,
-                                "start_time": timestamp_data["timestamp"],
+                                "start_time": timestamp_data.get("timestamp") or 0,
                                 "end_time": (
                                     slide_timestamps[i + 1]["timestamp"]
                                     if i + 1 < len(slide_timestamps)
                                     else None
                                 ),
                             }
-                            print(
-                                f"📝 Created fake segment for slide {slide_num}: {len(slide_transcript)} chars"
-                            )
 
             except Exception as e:
                 print(f"❌ Audio processing failed: {e}")
                 # Fallback to full audio transcription
                 try:
-                    full_transcript = transcribe_recording(temp_audio_path)
-                    slide_audio_transcripts[1] = {
-                        "transcript": full_transcript,
-                        "start_time": 0,
-                        "end_time": None,
-                    }
+                    if full_audio_temp_path:
+                        full_transcript = transcribe_recording(full_audio_temp_path)
+                        slide_audio_transcripts[1] = {
+                            "transcript": full_transcript,
+                            "start_time": 0,
+                            "end_time": None,
+                        }
                     print("🔄 Fell back to full audio transcription")
                 except Exception as transcribe_error:
                     print(
                         f"❌ Full audio transcription also failed: {transcribe_error}"
                     )
 
-        elif presentation_recording:
-            # No timestamps provided, transcribe full audio
-            print("🔊 Transcribing full presentation recording (no timestamps)...")
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
-                if hasattr(presentation_recording, "read"):
-                    temp_audio.write(presentation_recording.read())
-                else:
-                    temp_audio.write(presentation_recording)
-                temp_audio_path = temp_audio.name
-                full_audio_temp_path = temp_audio_path
-                temp_files_to_cleanup.append(temp_audio_path)
-
+        elif full_audio_temp_path and not slide_timestamps:
             try:
-                full_transcript = transcribe_recording(temp_audio_path)
+                full_transcript = transcribe_recording(full_audio_temp_path)
                 slide_audio_transcripts[1] = {
                     "transcript": full_transcript,
                     "start_time": 0,
@@ -521,10 +672,68 @@ def generate_feedback(
             except Exception as e:
                 print(f"❌ Full audio transcription failed: {e}")
 
-        # ---- QA AUDIO: slice student answer windows if provided ----
+        # --- Determine slide count + normalize slide_timestamps_only + build slide_order ---
+        actual_slide_count = pdf_slide_count
+        slide_timestamps_only: List[Dict] = []
+
+        if slide_timestamps:
+            # If slide count wasn't provided, infer it and detect a gap that signals Q&A starts
+            if not actual_slide_count:
+                unique_sorted = sorted(
+                    {int(ts["slideNumber"]) for ts in slide_timestamps}
+                )
+
+                if unique_sorted:
+                    cutoff = unique_sorted[-1]
+
+                    for i in range(len(unique_sorted) - 1):
+                        if unique_sorted[i + 1] - unique_sorted[i] > 1:
+                            cutoff = unique_sorted[i]
+                            print(
+                                f"📊 Gap detected after slide {cutoff}, assuming Q&A follows"
+                            )
+                            break
+
+                    actual_slide_count = cutoff
+
+            max_slide_num = max(int(ts["slideNumber"]) for ts in slide_timestamps)
+            if actual_slide_count and max_slide_num > actual_slide_count:
+                slide_timestamps_only = [
+                    ts
+                    for ts in slide_timestamps
+                    if int(ts["slideNumber"]) <= actual_slide_count
+                ]
+            else:
+                slide_timestamps_only = slide_timestamps
+        else:
+            slide_timestamps_only = []
+
+        if actual_slide_count and slide_timestamps_only:
+            slide_timestamps_only = [
+                ts
+                for ts in slide_timestamps_only
+                if int(ts.get("slideNumber", 0) or 0) <= int(actual_slide_count)
+            ]
+
+        # Canonical slide order for mapping Q&A
+        slide_order: List[int] = []
+        if slide_timestamps_only:
+            seen = set()
+
+            for ts in slide_timestamps_only:
+                s = int(ts.get("slideNumber") or 0)
+
+                if s > 0 and s not in seen:
+                    seen.add(s)
+                    slide_order.append(s)
+        elif actual_slide_count:
+            slide_order = list(range(1, actual_slide_count + 1))
+        elif slide_audio_transcripts:
+            slide_order = sorted(int(k) for k in slide_audio_transcripts.keys())
+
+        # --- Slice & transcribe Q&A windows and attach per-slide ---
         if full_audio_temp_path and qa_timestamps:
             try:
-                print(f"🎤 Processing {len(qa_timestamps)} QA timestamp windows")
                 if AUDIO_PROCESSING_AVAILABLE and AudioSegment is not None:
                     qa_src = AudioSegment.from_file(full_audio_temp_path)
 
@@ -545,10 +754,10 @@ def generate_feedback(
                         ) as tmp:
                             clip.export(tmp.name, format="wav")
                             temp_files_to_cleanup.append(tmp.name)
+
                             try:
                                 tx = transcribe_recording(tmp.name)
                             except Exception as te:
-                                print(f"⚠️ QA seg {idx} transcription failed: {te}")
                                 tx = ""
 
                         qa_audio_transcripts.append(
@@ -559,289 +768,365 @@ def generate_feedback(
                             }
                         )
                 else:
-                    # No slicing available — fall back to full-audio transcription once
-                    try:
-                        tx = transcribe_recording(full_audio_temp_path)
-                    except Exception as te:
-                        print(f"⚠️ QA fallback transcription failed: {te}")
-                        tx = ""
-                    if tx:
-                        qa_audio_transcripts.append(
-                            {"start_time": None, "end_time": None, "transcript": tx}
-                        )
+                    print(
+                        "⚠️ Skipping Q&A: audio slicing unavailable (pydub not installed)"
+                    )
             except Exception as e:
                 print(f"❌ QA audio processing error: {e}")
 
-        # Get actual slide count - prefer passed value, then infer from timestamps
-        actual_slide_count = pdf_slide_count
+            # Collect the VC’s questions (assumes one question per slide, in order)
+            assistant_questions = (
+                _collect_assistant_questions(conversation_history) or []
+            )
 
-        if not actual_slide_count and slide_timestamps:
-            # Infer actual slide count by looking for gaps in timestamps
-            # Usually Q&A section doesn't have proper slide numbers
-            unique_slides = set(ts["slideNumber"] for ts in slide_timestamps)
-            print(f"📊 Unique slide numbers in timestamps: {sorted(unique_slides)}")
+            # Map Q&A → slide (prefer explicit slideNumber in qa_timestamps)
+            has_slide_number_on_qa = bool(
+                qa_timestamps and all("slideNumber" in q for q in qa_timestamps)
+            )
 
-            # Check for sequential slides - if we have 1,2,3,4,5 and 5 is out of sequence, it's likely Q&A
-            if len(unique_slides) > 1:
-                sorted_slides = sorted(unique_slides)
-                # Find the last sequential slide
-                for i in range(len(sorted_slides) - 1):
-                    if sorted_slides[i + 1] - sorted_slides[i] > 1:
-                        # Gap detected, likely Q&A after this
-                        actual_slide_count = sorted_slides[i]
-                        print(
-                            f"📊 Gap detected after slide {actual_slide_count}, assuming Q&A follows"
-                        )
-                        break
-                else:
-                    # No gaps, use the max slide number
-                    actual_slide_count = max(sorted_slides)
-                    print(f"📊 Using max slide number as count: {actual_slide_count}")
+            if has_slide_number_on_qa:
+                # slideNumber -> first QA idx
+                qa_idx_by_slide: Dict[int, int] = {}
 
-        print(f"📊 Final actual slide count: {actual_slide_count}")
+                for idx, q in enumerate(qa_timestamps):
+                    sn = int(q.get("slideNumber") or 0)
+                    if sn > 0 and sn not in qa_idx_by_slide:
+                        qa_idx_by_slide[sn] = idx
 
-        # Now generate feedback based on available data
-        feedback_parts = []
-
-        # Separate Q&A timestamps from slide timestamps
-        slide_timestamps_only = []
-        has_qa_section = False
-
-        if slide_timestamps:
-            # Check if the last timestamp is significantly different or if we have too many timestamps
-            max_slide_num = max(ts["slideNumber"] for ts in slide_timestamps)
-
-            # If we have an actual slide count, use it to filter
-            if actual_slide_count and max_slide_num > actual_slide_count:
-                print(
-                    f"⚠️ Detected extra timestamps beyond slide count ({max_slide_num} > {actual_slide_count})"
-                )
-                slide_timestamps_only = [
-                    ts
-                    for ts in slide_timestamps
-                    if ts["slideNumber"] <= actual_slide_count
-                ]
-                has_qa_section = True
+                for si, sn in enumerate(slide_order):
+                    qa_idx = qa_idx_by_slide.get(sn)
+                    if qa_idx is None:
+                        continue
+                    if 0 <= qa_idx < len(qa_audio_transcripts):
+                        ans = qa_audio_transcripts[qa_idx]
+                        per_slide_qa[sn] = {
+                            "question": (
+                                assistant_questions[si]
+                                if si < len(assistant_questions)
+                                else None
+                            ),
+                            "answer": (ans.get("transcript") or "").strip(),
+                            "start_time": ans.get("start_time"),
+                            "end_time": ans.get("end_time"),
+                        }
             else:
-                slide_timestamps_only = slide_timestamps
+                # Index-ordered pairing: slide i ↔ QA i ↔ question i
+                pairs = min(len(slide_order), len(qa_audio_transcripts))
 
-        # Always try to generate per-slide feedback if we have timestamps
-        if slide_timestamps_only and len(slide_timestamps_only) > 1:
-            print(
-                f"📊 Generating per-slide feedback for {len(slide_timestamps_only)} slides based on timestamps"
-            )
-            print(f"📊 Slide timestamps (filtered): {slide_timestamps_only}")
-            print(
-                f"📊 Audio transcripts available for slides: {list(slide_audio_transcripts.keys())}"
-            )
-
-            # Generate feedback for each slide based on timestamps
-            for i, timestamp_data in enumerate(slide_timestamps_only):
-                slide_num = timestamp_data["slideNumber"]
-                print(f"📊 Processing slide {slide_num} (index {i})")
-
-                # Use corresponding audio transcript if available, otherwise empty
-                if slide_num in slide_audio_transcripts:
-                    slide_data = slide_audio_transcripts[slide_num]
-                    print(f"📊 Using audio transcript for slide {slide_num}")
-                else:
-                    slide_data = {
-                        "transcript": "Audio not available for this slide",
-                        "start_time": 0,
-                        "end_time": None,
+                for i in range(pairs):
+                    sn = slide_order[i]
+                    ans = qa_audio_transcripts[i]
+                    per_slide_qa[sn] = {
+                        "question": (
+                            assistant_questions[i]
+                            if i < len(assistant_questions)
+                            else None
+                        ),
+                        "answer": (ans.get("transcript") or "").strip(),
+                        "start_time": ans.get("start_time"),
+                        "end_time": ans.get("end_time"),
                     }
-                    print(
-                        f"📊 No audio transcript for slide {slide_num}, using placeholder"
-                    )
+
+        # --- Evaluate Q&A per slide (use existing generator), then merge into slide feedback later ---
+        qa_eval_by_slide: Dict[int, Dict] = {}
+        try:
+            for sn, qa in (per_slide_qa or {}).items():
+                # Build a minimal, slide-scoped dialogue (one Q, one A)
+                mini_conv = []
+                q = (qa.get("question") or "").strip()
+                a = (qa.get("answer") or "").strip()
+                if q:
+                    mini_conv.append({"role": "assistant", "content": q})
+                if a:
+                    mini_conv.append({"role": "user", "content": a})
+
+                # Pass the single QA window so timestamps appear in the model context
+                qa_seg = [
+                    {
+                        "start_time": qa.get("start_time"),
+                        "end_time": qa.get("end_time"),
+                        "transcript": a,
+                    }
+                ]
+
+                qa_text = generate_qa_feedback(
+                    conversation_history=mini_conv, qa_segments=qa_seg
+                )
+                qa_parsed = parse_qa_feedback(qa_text) if qa_text else None
+
+                qa_eval_by_slide[sn] = {
+                    "raw": qa_text,
+                    "parsed": qa_parsed,
+                }
+        except Exception as e:
+            print(f"⚠️ Per-slide Q&A evaluation failed: {e}")
+
+        # --- Build per-slide feedback texts (no global Q&A section) ---
+        feedback_parts: List[str] = []
+
+        if slide_timestamps_only and len(slide_timestamps_only) > 1:
+            # Generate feedback for each slide using timestamps order
+            for ts in slide_timestamps_only:
+                slide_num = ts["slideNumber"]
+                slide_data = slide_audio_transcripts.get(slide_num) or {
+                    "transcript": "Audio not available for this slide",
+                    "start_time": 0,
+                    "end_time": None,
+                }
 
                 try:
                     feedback_part = generate_slide_feedback(
                         slide_num, slide_data, slide_content, conversation_history
                     )
-                    feedback_parts.append(feedback_part)
-                    print(f"✅ Successfully generated feedback for slide {slide_num}")
                 except Exception as e:
                     print(f"❌ Error generating feedback for slide {slide_num}: {e}")
-                    feedback_parts.append(
-                        f"**Slide {slide_num} Feedback:** Error: {str(e)}"
-                    )
+                    feedback_part = f"**Slide {slide_num} Feedback:** Error: {str(e)}"
 
-            # Add Q&A section analysis if we detected Q&A or have conversation history
-            if conversation_history and (
-                has_qa_section or len(conversation_history) > 2
-            ):
-                print(f"✅ Generating Q&A feedback...")
-                qa_feedback = generate_qa_feedback(
-                    conversation_history, qa_segments=qa_audio_transcripts
-                )
-                feedback_parts.append(qa_feedback)
-            else:
-                print(f"⚠️ Skipping Q&A feedback generation")
-
+                feedback_parts.append(feedback_part)
         elif slide_audio_transcripts and len(slide_audio_transcripts) > 1:
-            print(
-                f"📊 Generating per-slide feedback for {len(slide_audio_transcripts)} slides based on audio"
-            )
-
+            # Fallback to whatever slide numbers we have in transcripts
             for slide_num in sorted(slide_audio_transcripts.keys()):
                 slide_data = slide_audio_transcripts[slide_num]
-                feedback_part = generate_slide_feedback(
-                    slide_num, slide_data, slide_content, conversation_history
-                )
+
+                try:
+                    feedback_part = generate_slide_feedback(
+                        slide_num, slide_data, slide_content, conversation_history
+                    )
+                except Exception as e:
+                    print(f"❌ Error generating feedback for slide {slide_num}: {e}")
+                    feedback_part = f"**Slide {slide_num} Feedback:** Error: {str(e)}"
+
                 feedback_parts.append(feedback_part)
-
-            # Add Q&A section analysis
-            if conversation_history:
-                print(f"✅ Generating Q&A feedback...")
-                qa_feedback = generate_qa_feedback(
-                    conversation_history, qa_segments=qa_audio_transcripts
-                )
-                feedback_parts.append(qa_feedback)
-                print(f"✅ Q&A feedback added to parts")
-            else:
-                print(f"⚠️ No conversation history for Q&A feedback")
-
         else:
-            # Fallback to single slide feedback when no timestamps available
-            print("📝 Generating single slide feedback (no timestamps provided)")
-
-            # Use the structured format for a single slide
-            slide_data = {
+            # Single-slide path
+            slide_num = 1
+            slide_data = slide_audio_transcripts.get(slide_num) or {
                 "transcript": "Audio not available",
                 "start_time": 0,
                 "end_time": None,
             }
-            if slide_audio_transcripts and 1 in slide_audio_transcripts:
-                slide_data = slide_audio_transcripts[1]
 
-            feedback_part = generate_slide_feedback(
-                1, slide_data, slide_content, conversation_history
-            )
+            try:
+                feedback_part = generate_slide_feedback(
+                    slide_num, slide_data, slide_content, conversation_history
+                )
+            except Exception as e:
+                print(f"❌ Error generating feedback for slide {slide_num}: {e}")
+                feedback_part = f"**Slide {slide_num} Feedback:** Error: {str(e)}"
+
             feedback_parts.append(feedback_part)
 
-            # Add Q&A section analysis
-            if conversation_history:
-                print(f"✅ Generating Q&A feedback...")
-                qa_feedback = generate_qa_feedback(
-                    conversation_history, qa_segments=qa_audio_transcripts
-                )
-                feedback_parts.append(qa_feedback)
-                print(f"✅ Q&A feedback added to parts")
-            else:
-                print(f"⚠️ No conversation history for Q&A feedback")
+        # Only per-slide feedbacks
+        slide_feedback_texts = [
+            (part or "").strip() for part in feedback_parts if (part or "").strip()
+        ]
 
-        # Use PDF session ID for images, generate new session ID for audio
-        feedback_session_id = asset_session_id or str(uuid.uuid4())
-        image_session_id = pdf_session_id or asset_session_id or feedback_session_id
+        # --- Collate transcripts for final payload ---
+        slide_transcript_list = []
+        for sn in sorted(slide_audio_transcripts.keys()):
+            if actual_slide_count and int(sn) > int(actual_slide_count):
+                continue
+            t = (slide_audio_transcripts[sn] or {}).get("transcript") or ""
+            if t.strip():
+                slide_transcript_list.append(f"[Slide {sn}] {t.strip()}")
 
-        # Save audio segments if we have them
-        audio_session_data = {}
+        overall_presentation_transcript = (
+            "\n".join(slide_transcript_list).strip() or None
+        )
+        _present_only = {
+            k: v
+            for k, v in (slide_audio_transcripts or {}).items()
+            if not actual_slide_count or int(k) <= int(actual_slide_count)
+        }
+        presentation_transcript = _concat_presentation_tx(_present_only)
+        student_label = _label_for_student(student_name)
+        dialogue_lines = []
 
-        if slide_audio_transcripts and original_audio_segments:
-            # Save the split audio segments to permanent storage
-            audio_session_data = save_audio_segments(
-                feedback_session_id, original_audio_segments
-            )
-        elif slide_audio_transcripts:
-            print("⚠️ Audio transcripts available but no segments to save")
-            print(f"🔧 DEBUG: Transcript keys: {list(slide_audio_transcripts.keys())}")
-        else:
-            print("❌ No audio transcripts or segments available")
+        for m in conversation_history or []:
+            role = m.get("role")
+            content = (m.get("content") or "").strip()
 
-        # Structure the response data
-        structured_feedback = {
-            "session_id": feedback_session_id,
+            if not content or _is_control_line(content):
+                continue
+
+            who = "VC" if role == "assistant" else student_label
+            dialogue_lines.append(f"{who}: {content}")
+
+        dialogue_text_clean = "\n".join(dialogue_lines) or None
+
+        # --- Structured response scaffold ---
+        structured_feedback: Dict = {
+            "session_id": effective_session_id,
             "pdf_session_id": image_session_id,
-            "feedback_type": "per_slide" if len(feedback_parts) > 1 else "single",
+            "feedback_type": "per_slide" if len(slide_feedback_texts) > 1 else "single",
             "slides": [],
-            "qa_feedback": None,
+            "qa_feedback": None,  # intentionally unused; per-slide only
             "metadata": {
                 "generated_at": time.time(),
                 "slide_count": actual_slide_count
                 or (len(slide_timestamps_only) if slide_timestamps_only else 1),
                 "has_audio": bool(slide_audio_transcripts),
                 "has_conversation": bool(conversation_history),
-                "audio_splitting_success": (
-                    len(original_audio_segments) > 1
-                    if original_audio_segments
-                    else False
+                "audio_splitting_success": bool(
+                    original_audio_segments and len(original_audio_segments) > 1
                 ),
                 "has_qa_audio": bool(qa_audio_transcripts),
                 "qa_segments_count": len(qa_audio_transcripts),
             },
-            "qa_audio": qa_audio_transcripts,
+            "transcripts": {
+                "overall_presentation": overall_presentation_transcript,
+                "presentation": presentation_transcript,
+                "qa_responses": qa_audio_transcripts,  # raw list for clients
+                "per_slide": {
+                    str(k): (v or {}).get("transcript")
+                    for k, v in slide_audio_transcripts.items()
+                },
+                "dialogue_text": dialogue_text_clean,
+            },
         }
 
-        # --- URL BUILD (this is where to change!) ---
-        # Parse feedback parts into structured data
-        qa_feedback_text = None
-        slide_feedback_texts = []
+        # --- (Optional) Ensure slide images & SlideAsset rows exist (end-of-run) ---
+        try:
+            if selected_assignment:
+                pdf_path = os.path.join(ASSIGNMENTS_DIR, selected_assignment)
+                if os.path.exists(pdf_path):
+                    generated_slides = save_slide_images(pdf_path, image_session_id)
+                    for slide_number, paths in (generated_slides or {}).items():
+                        full_path = paths.get("full")
+                        thumbnail_path = paths.get("thumbnail")
 
-        for part in feedback_parts:
-            # Check for Q&A feedback - must start with **Q&A Session**
-            if part.strip().startswith("**Q&A Session"):
-                qa_feedback_text = part
-                print(f"✅ Found Q&A feedback: {part[:50]}...")
+                        if full_path and os.path.exists(full_path):
+                            full_image_filename = build_s3_filename(
+                                slide_number, "full"
+                            )
+                            full_key = build_key(
+                                image_session_id,
+                                full_image_filename,
+                                subdir=S3_SLIDE_IMAGES_FOLDER,
+                            )
+
+                            try:
+                                upload_file(
+                                    full_path, full_key, content_type="image/png"
+                                )
+                                upsert_slide_asset(
+                                    session_id=image_session_id,
+                                    slide_number=slide_number,
+                                    kind="image_full",
+                                    s3_key=full_key,
+                                    mime_type="image/png",
+                                )
+                            except Exception as ue:
+                                print(
+                                    f"⚠️ Full image upload/upsert failed s{slide_number}: {ue}"
+                                )
+
+                        if thumbnail_path and os.path.exists(thumbnail_path):
+                            thumb_image_filename = build_s3_filename(
+                                slide_number, "thumb"
+                            )
+                            thumb_key = build_key(
+                                image_session_id,
+                                thumb_image_filename,
+                                subdir=S3_SLIDE_IMAGES_FOLDER,
+                            )
+
+                            try:
+                                upload_file(
+                                    thumbnail_path, thumb_key, content_type="image/png"
+                                )
+                                upsert_slide_asset(
+                                    session_id=image_session_id,
+                                    slide_number=slide_number,
+                                    kind="image_thumb",
+                                    s3_key=thumb_key,
+                                    mime_type="image/png",
+                                )
+                            except Exception as ue:
+                                print(
+                                    f"⚠️ Thumbnail image upload/upsert failed s{slide_number}: {ue}"
+                                )
+                else:
+                    print(f"⚠️ Selected assignment not found at {pdf_path}")
             else:
-                slide_feedback_texts.append(part)
-                print(f"📊 Added slide feedback: {part[:50]}...")
+                print("⚠️ No selected_assignment provided; skipping image generation")
+        except Exception as e:
+            print(f"⚠️ Late slide-image generation failed: {e}")
 
-        # Process individual slide feedback
+        # --- Parse & attach per-slide feedback + Q&A ---
         for i, feedback_text in enumerate(slide_feedback_texts):
-            slide_num = i + 1
+            # Determine slide number aligned to order
+            slide_num = None
 
             if slide_timestamps_only and i < len(slide_timestamps_only):
-                slide_num = slide_timestamps_only[i]["slideNumber"]
+                slide_num = int(slide_timestamps_only[i]["slideNumber"])
+            elif i < len(slide_order):
+                slide_num = slide_order[i]
+            else:
+                slide_num = i + 1  # last resort
 
-            # Skip if this slide number exceeds the actual slide count (but allow up to 4 slides minimum)
-            if actual_slide_count and slide_num > (actual_slide_count + 2):
-                print(
-                    f"⚠️ Skipping slide {slide_num} as it exceeds actual slide count {actual_slide_count}"
-                )
+            if actual_slide_count and slide_num > actual_slide_count:
                 continue
 
-            # Parse the feedback text to extract individual scores
             parsed_feedback = parse_slide_feedback(feedback_text)
-            # image_urls = get_presigned_slide_urls(image_session_id, slide_num)
-            # audio_urls = get_presigned_slide_urls(feedback_session_id, slide_num)
-            # image_url = image_urls["thumb"]
-            # image_url_full = image_urls["full"]
-            # audio_url = audio_urls["audio"]
+
+            qae = (qa_eval_by_slide or {}).get(slide_num)
+            if qae and qae.get("parsed"):
+                qap = qae["parsed"]
+                if qap.get("impromptu_response"):
+                    parsed_feedback["impromptu_response"] = qap["impromptu_response"]
+                if qap.get("composure"):
+                    parsed_feedback["composure"] = qap["composure"]
+
+            slide_tx = (slide_audio_transcripts.get(slide_num, {}) or {}).get(
+                "transcript"
+            )
 
             slide_data = {
                 "slide_number": slide_num,
-                # "image_url": image_url,
-                # "image_url_full": image_url_full,
-                # "audio_url": audio_url,
                 "feedback": parsed_feedback,
                 "raw_feedback_text": feedback_text,
+                "transcript": slide_tx or None,
+                "qa": per_slide_qa.get(slide_num) or None,
             }
+
+            # Pretty QA transcript (VC + STUDENT) if present
+            qa = per_slide_qa.get(slide_num)
+            if qa:
+                q = (qa.get("question") or "").strip()
+                a = (qa.get("answer") or "").strip()
+                slide_data["qa_transcript"] = (
+                    f"VC: {q}\n{_label_for_student(student_name)}: {a}".strip()
+                )
+
             structured_feedback["slides"].append(slide_data)
 
-        # Add Q&A feedback if available
-        if qa_feedback_text:
-            print(f"📝 Parsing Q&A feedback text...")
-            structured_feedback["qa_feedback"] = parse_qa_feedback(qa_feedback_text)
-            print(f"✅ Q&A feedback parsed: {structured_feedback['qa_feedback']}")
-        else:
-            print(f"⚠️ No Q&A feedback text found to parse")
+        if actual_slide_count:
+            structured_feedback["slides"] = [
+                s
+                for s in structured_feedback["slides"]
+                if s.get("slide_number", 10**9) <= actual_slide_count
+            ]
 
-        # Clean up temporary files
+        # --- Cleanup temp files ---
         for temp_file in temp_files_to_cleanup:
             try:
                 os.unlink(temp_file)
             except Exception as e:
                 print(f"⚠️ Failed to cleanup {temp_file}: {e}")
 
-        # Cleanup the original PDF file(s) from local storage
+        # --- Cleanup local PDF renders ---
         try:
             if pdf_session_id:
                 cleanup_local_pdf_images(pdf_session_id)
                 print(f"🗑️ Cleaned up local PDF(s) for session {pdf_session_id}")
             else:
-                print(f"⚠️ No PDF session ID provided, skipping PDF cleanup")
+                print("⚠️ No PDF session ID provided, skipping PDF cleanup")
         except Exception as e:
             print(f"⚠️ Failed to cleanup local PDF(s) for session {pdf_session_id}: {e}")
+
+        # --- Overall score ---
+        structured_feedback["overall"] = _compute_overall(structured_feedback)
 
         return structured_feedback
 
