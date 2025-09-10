@@ -9,7 +9,6 @@ import { INTERVENTION_STATES } from "../constants";
 
 function IncomingChatMessages({
 	messages,
-	isLoading,
 	interventionState,
 	feedbackGenerated,
 	batchStartIndex = 0,
@@ -17,8 +16,6 @@ function IncomingChatMessages({
 	const listRef = useRef(null);
 
 	let messageContent = null;
-	let isLoadingContent = null;
-
 	const vcIsQuestioning = interventionState === INTERVENTION_STATES.questioning;
 	const questionBatchIsComplete =
 		interventionState === INTERVENTION_STATES.batch_complete;
@@ -29,46 +26,37 @@ function IncomingChatMessages({
 
 	if (messages && messages.length) {
 		const sinceBatch = messages.slice(Math.max(0, batchStartIndex));
-		let n = 0;
-
-		if (vcIsQuestioning) {
-			// show everything since this batch began (includes pending spinner rows)
-			n = sinceBatch.length;
-		} else if (questionBatchIsComplete) {
-			// show all content from this batch including 'thanks...' line;
-			n = sinceBatch.length;
-		} else if (isFinalComplete && !feedbackGenerated) {
-			n = Math.min(1, sinceBatch.length);
-		}
-
+		const shouldShowMessages =
+			vcIsQuestioning ||
+			questionBatchIsComplete ||
+			(isFinalComplete && !feedbackGenerated);
+		const n = shouldShowMessages ? sinceBatch.length : 0;
 		const messagesToShow =
 			n > 0 && !studentPresenting ? sinceBatch.slice(-n) : [];
 
-		messageContent = messagesToShow.map(
-			({ role, content, pending, id }, index) => {
-				if (pending) {
-					return (
-						<div
-							key={id}
-							className="mt-2 flex items-center gap-2 pl-10"
-						>
-							{" "}
-							<div className="h-4 w-4 rounded-full border-2 border-gray-300 border-t-transparent animate-spin" />
-							<span className="text-sm text-gray-500">Preparing question…</span>
-						</div>
-					);
-				}
-
+		messageContent = messagesToShow.map(({ role, content, pending, id }) => {
+			if (pending) {
 				return (
 					<div
 						key={id}
-						className={`message ${role}`}
+						className="mt-2 flex items-center gap-2 pl-10"
 					>
-						<div className="message-content">{content}</div>
+						{" "}
+						<div className="h-4 w-4 rounded-full border-2 border-gray-300 border-t-transparent animate-spin" />
+						<span className="text-sm text-gray-500">Preparing question…</span>
 					</div>
 				);
 			}
-		);
+
+			return (
+				<div
+					key={id}
+					className={`message ${role}`}
+				>
+					<div className="message-content">{content}</div>
+				</div>
+			);
+		});
 	}
 
 	useEffect(() => {
@@ -80,14 +68,6 @@ function IncomingChatMessages({
 		return () => cancelAnimationFrame(rafId);
 	}, [messages?.length, interventionState]);
 
-	if (isLoading) {
-		isLoadingContent = (
-			<div className="message assistant">
-				<div className="message-content">Thinking...</div>
-			</div>
-		);
-	}
-
 	return (
 		<div className="min-h-0">
 			<div
@@ -95,7 +75,6 @@ function IncomingChatMessages({
 				className="flex-1 p-5 overflow-y-auto flex flex-col gap-[15px] min-h-0 "
 			>
 				{messageContent}
-				{isLoadingContent}
 			</div>
 		</div>
 	);
@@ -114,7 +93,7 @@ function GeneratedFeedback({
 	let status = null;
 	if (isLoading && !feedbackGenerated) {
 		return (
-			<div className="intervention-status complete complete flex items-center justify-center">
+			<div className="intervention-status complete flex items-center justify-center">
 				<span className="ml-2.5 text-md text-gray-500 font-medium">
 					Generating feedback...
 				</span>
@@ -122,7 +101,7 @@ function GeneratedFeedback({
 		);
 	} else if (genError) {
 		return (
-			<div className="intervention-status complete complete flex items-center justify-center">
+			<div className="intervention-status complete flex items-center justify-center">
 				<span className="intervention-indicator mr-2">❌</span>
 				<span className="ml-2.5 text-md text-red-600 font-medium">
 					Failed to generate feedback...
@@ -131,7 +110,7 @@ function GeneratedFeedback({
 		);
 	} else if (feedbackGenerated) {
 		return (
-			<div className="intervention-status complete complete flex items-center justify-center">
+			<div className="intervention-status complete flex items-center justify-center">
 				<span className="intervention-indicator mr-2">✅</span>
 				<span className="ml-2.5 text-lg text-green-600 font-medium">
 					<a
@@ -214,10 +193,7 @@ function VcChatContainer({
 			<IncomingChatMessages
 				batchStartIndex={batchStartIndex}
 				messages={messages}
-				isLoading={isLoading}
 				interventionState={interventionState}
-				questionsAsked={questionsAsked}
-				questionsTarget={questionsTarget}
 				feedbackGenerated={feedbackGenerated}
 			/>
 		</div>
@@ -234,7 +210,6 @@ export default function ChatApp() {
 		qaTimestamps,
 		questionsAsked,
 		selectedAssignment,
-		setInterventionState,
 		slideTimestamps,
 		questionsTarget,
 	} = useAppContext();
@@ -247,6 +222,8 @@ export default function ChatApp() {
 	const [feedbackGenerated, setFeedbackGenerated] = useState(false);
 	const [genError, setGenError] = useState(null);
 	const [hasTriggeredFeedback, setHasTriggeredFeedback] = useState(false);
+	const isFinalComplete =
+		interventionState === INTERVENTION_STATES.final_complete;
 
 	const generateFeedback = useCallback(async () => {
 		setIsLoading(true);
@@ -282,9 +259,7 @@ export default function ChatApp() {
 				payloadToStore?.feedback ||
 				payloadToStore?.qa_feedback
 			) {
-				// setPitchFeedback(payloadToStore);
 				setFeedbackGenerated(true);
-				setInterventionState(INTERVENTION_STATES.inactive);
 			}
 		} catch (err) {
 			console.error("Feedback generation failed:", err);
@@ -299,7 +274,6 @@ export default function ChatApp() {
 		slideTimestamps,
 		qaTimestamps,
 		sessionId,
-		setInterventionState,
 	]);
 
 	// Keep ChatApp in sync with the TTS engine.
@@ -311,21 +285,18 @@ export default function ChatApp() {
 	}, []);
 
 	useEffect(() => {
-		if (
-			interventionState === INTERVENTION_STATES.final_complete &&
-			!hasTriggeredFeedback
-		) {
+		if (isFinalComplete && !hasTriggeredFeedback) {
 			setHasTriggeredFeedback(true);
 			generateFeedback();
 		}
-	}, [interventionState, hasTriggeredFeedback, generateFeedback]);
+	}, [isFinalComplete, hasTriggeredFeedback, generateFeedback]);
 
 	// reset feedback-related flags when the session changes
 	useEffect(() => {
 		setHasTriggeredFeedback(false);
 		setFeedbackGenerated(false);
 		setGenError(null);
-	}, [sessionId]);
+	}, [sessionId, selectedAssignment]);
 
 	const stopCurrentAudio = () => {
 		TTSService.stop();

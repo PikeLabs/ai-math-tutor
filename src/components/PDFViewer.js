@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -115,12 +115,7 @@ function RecordingBar({
 	}
 
 	let countdownTimerContent = null;
-	if (
-		inQA &&
-		answerActive &&
-		isRecording &&
-		!isPaused
-	) {
+	if (inQA && answerActive && isRecording && !isPaused) {
 		const timeLeft = formatTime(answerSecondsLeft);
 		const handleOnContinue = () => {
 			// one-shot: cancel timer and fire once
@@ -162,33 +157,35 @@ function RecordingBar({
 function AdvanceSlideButton({
 	pageNumber,
 	numPages,
-	disabled,
 	handleFinishButton,
 	handleNextPage,
+	isRecording,
+	isLocked,
+	furthestVisited,
+	isReviewingPast,
 }) {
 	const isLastPage = numPages ? pageNumber === numPages : false;
 
-	const nextButton = (
+	// Disable when not recording, or when locked *and* at/ beyond the frontier
+	// (you may only "Forward" up to the furthestVisited while locked).
+	const disableButton =
+		!isRecording || (isLocked && pageNumber >= furthestVisited);
+	const buttonText = isLastPage
+		? "Finish"
+		: isReviewingPast
+		? "Forward"
+		: "Next";
+	const onClickHandler = isLastPage ? handleFinishButton : handleNextPage;
+
+	return (
 		<button
 			className="control-btn"
-			disabled={disabled}
-			onClick={handleNextPage}
+			disabled={disableButton}
+			onClick={onClickHandler}
 		>
-			Next
+			{buttonText}
 		</button>
 	);
-
-	const finishButton = (
-		<button
-			className="control-btn"
-			disabled={disabled}
-			onClick={handleFinishButton}
-		>
-			Finish
-		</button>
-	);
-
-	return isLastPage ? finishButton : nextButton;
 }
 
 export default function PDFViewer() {
@@ -209,35 +206,48 @@ export default function PDFViewer() {
 	} = useAppContext();
 
 	const [uploadedFile, setUploadedFile] = useState(null);
-	// const [uploadedFileName, setUploadedFileName] = useState("");
 	const [numPages, setNumPages] = useState(null);
 	const [pageNumber, setPageNumber] = useState(1);
 	const [scale, setScale] = useState(1.0);
-	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState(null);
-
-	// Slide locking state
 	const [isLocked, setIsLocked] = useState(false);
-	const [lockTriggerSlides, setLockTriggerSlides] = useState([]); // Will be set to [numPages] when PDF loads
-	const [unlockedSlides, setUnlockedSlides] = useState(new Set()); // Track which slides have been manually unlocked
-
+	const [furthestVisited, setFurthestVisited] = useState(1);
+	const [showRecordModal, setShowRecordModal] = useState(false);
 	// Slide timestamp tracking for audio splitting
 	const [slideTimestamps, setSlideTimestamps] = useState([]);
 
-	// show modal after successful upload
-	const [showRecordModal, setShowRecordModal] = useState(false);
-
 	// ref to hidden replace-file input (for "upload different file")
 	const replaceInputRef = useRef(null);
-	const isInterventionComplete =
-		interventionState === INTERVENTION_STATES.batch_complete ||
+	const unlockedSlidesRef = useRef(new Set());
+	const lastLockTriggerSlideRef = useRef(null);
+
+	const lockTriggerSlides = useMemo(() => {
+		if (!numPages) return [];
+		const triggers = Array.from(
+			{ length: Math.floor(numPages / 2) },
+			(_, i) => (i + 1) * 2
+		);
+		if (!triggers.includes(numPages)) triggers.push(numPages);
+		return triggers;
+	}, [numPages]);
+
+	const isFinalComplete =
 		interventionState === INTERVENTION_STATES.final_complete;
+	const isInterventionComplete =
+		interventionState === INTERVENTION_STATES.batch_complete || isFinalComplete;
+
+	// When the student is viewing a slide before the furthest they've actually presented,
+	// we are in "catch-up" review mode.
+	const isReviewingPast = pageNumber < furthestVisited;
 
 	// Handle auto-unlock when intervention is complete
 	useEffect(() => {
 		if (isInterventionComplete && isLocked) {
 			setIsLocked(false);
-			setUnlockedSlides((prev) => new Set([...prev, pageNumber]));
+			if (lastLockTriggerSlideRef.current != null) {
+				unlockedSlidesRef.current.add(lastLockTriggerSlideRef.current);
+				lastLockTriggerSlideRef.current = null;
+			}
 		}
 	}, [isInterventionComplete, isLocked, pageNumber]);
 
@@ -287,13 +297,12 @@ export default function PDFViewer() {
 
 		// Optimistically set UI; if upload fails we'll reset
 		setUploadedFile(file);
-		// setUploadedFileName(file.name);
-		setLoading(true);
 		setError(null);
 		setNumPages(null);
 		setPageNumber(1);
+		setFurthestVisited(1);
 		setIsLocked(false);
-		setUnlockedSlides(new Set());
+		unlockedSlidesRef.current.clear();
 
 		// Build Form:
 		const formData = new FormData();
@@ -317,11 +326,9 @@ export default function PDFViewer() {
 
 			// revert optimistic UI so user can pick again
 			setUploadedFile(null);
-			// setUploadedFileName("");
 			setNumPages(null);
 			setPageNumber(1);
 		} finally {
-			setLoading(false);
 			if (event?.target) {
 				event.target.value = "";
 			}
@@ -329,74 +336,86 @@ export default function PDFViewer() {
 	};
 
 	const onDocumentLoadSuccess = ({ numPages }) => {
-		console.log("PDF loaded successfully with", numPages, "pages");
 		setNumPages(numPages);
 		setPageNumber(1);
 		setError(null);
 		setIsLocked(false); // Reset lock state on new document
-		setUnlockedSlides(new Set()); // Reset unlocked slides tracking
-
-		const triggers = Array.from(
-			{ length: Math.floor(numPages / 2) },
-			(_, i) => (i + 1) * 2
-		);
-
-		if (!triggers.includes(numPages)) {
-			triggers.push(numPages); // odd slide count → last page triggers a 1-question batch
-		}
-
-		setLockTriggerSlides(triggers);
-
+		unlockedSlidesRef.current.clear(); // Reset unlocked slides tracking
+		setFurthestVisited(1);
 		// Only way to start recording is via this modal
 		setShowRecordModal(true);
-		setLoading(false);
 	};
 
 	const onDocumentLoadError = (error) => {
 		console.error("PDF load error:", error);
 		setError(`Failed to load PDF: ${error.message}`);
-		setLoading(false);
 	};
 
-	const changePage = (offset) => {
-		const newPageNumber = Math.max(1, Math.min(numPages, pageNumber + offset));
+	const onChangePage = (offset) => {
+		if (!numPages) return;
+		const clamped = Math.max(1, Math.min(numPages, pageNumber + offset));
 
-		// Check if trying to advance from a lock trigger slide that hasn't been unlocked yet
-		if (
-			offset > 0 &&
-			lockTriggerSlides.includes(pageNumber) &&
-			!unlockedSlides.has(pageNumber)
-		) {
-			setIsLocked(true);
+		// === While LOCKED (VC questioning) ===
+		// Allow bounded navigation:
+		//  - Backwards always OK (if > 1)
+		//  - Forwards only up to the furthestVisited (catch-up). No stamps/locks/callbacks.
+		if (isLocked) {
+			if (offset < 0 && pageNumber > 1) {
+				// Allow backward navigation
+				setPageNumber(clamped);
+				return;
+			}
 
-			// Notify parent component that slide lock was triggered
-			const isFinalBatch = !!numPages && pageNumber === numPages;
-			onSlideLockTriggered(pageNumber, isFinalBatch);
+			if (offset > 0 && pageNumber < furthestVisited) {
+				// Allow forward navigation
+				setPageNumber(clamped);
+				return;
+			}
 
-			return; // Prevent navigation when lock triggers
-		}
-
-		// Prevent forward navigation if currently locked
-		if (offset > 0 && isLocked) {
-			console.log("Navigation blocked - slide is locked");
+			// At or beyond the frontier while locked → block
 			return;
 		}
 
-		setPageNumber(newPageNumber);
-
-		if (offset > 0) {
-			const newTimeStamp = {
-				slideNumber: newPageNumber,
-				// IMPORTANT: use the same counter as QA so pauses don’t create drift
-				timestamp: recordingTime,
-			};
-
-			setSlideTimestamps((prev) => [...prev, newTimeStamp]);
+		// === Not locked ===
+		// Catch-up forward moves (when reviewing past slides) do not advance program.
+		if (pageNumber < furthestVisited && offset > 0) {
+			setPageNumber(clamped);
+			return;
 		}
 
-		// Notify parent when advancing slides (for recording resume)
-		if (offset > 0 && onSlideAdvance) {
-			onSlideAdvance();
+		// === Advancing the frontier (presenting new content) ===
+		// We only consider locks/timestamps when moving forward from the frontier.
+		const isAdvancingFrontier = offset > 0 && pageNumber === furthestVisited;
+		if (isAdvancingFrontier) {
+			// Trigger lock at the *current* frontier slide if it’s a lock trigger.
+			if (
+				lockTriggerSlides.includes(pageNumber) &&
+				!unlockedSlidesRef.current.has(pageNumber)
+			) {
+				setIsLocked(true);
+				lastLockTriggerSlideRef.current = pageNumber; // remember which slide locked
+				const isFinalBatch = !!numPages && pageNumber === numPages;
+				onSlideLockTriggered(pageNumber, isFinalBatch);
+				return; // locked: block forward navigation...
+			}
+		}
+
+		// Perform the actual navigation
+		setPageNumber(clamped);
+
+		// Advance the frontier (program state) if we truly moved it forward.
+		if (isAdvancingFrontier && clamped > furthestVisited) {
+			// Move the frontier to the new page if we actually moved forward
+			if (clamped > furthestVisited) {
+				setFurthestVisited(clamped);
+				setSlideTimestamps((prev) => [
+					...prev,
+					{ slideNumber: clamped, timestamp: recordingTime },
+				]);
+			}
+
+			// Notify parent (resume recording after batch complete, etc.)
+			onSlideAdvance?.();
 		}
 	};
 
@@ -415,21 +434,20 @@ export default function PDFViewer() {
 	};
 
 	const handleUploadDifferent = () => {
-		// open the replace-file chooser and keep the modal UX clean
-		if (replaceInputRef.current) {
-			replaceInputRef.current.value = null;
-		}
-
-		// Open the replace-file chooser and keep the modal UX clean
-		replaceInputRef.current?.click();
+		// reset so choosing the same file fires onChange
+		if (replaceInputRef.current) replaceInputRef.current.value = null;
+		// Defer click until after any state updates
+		setTimeout(() => replaceInputRef.current?.click(), 0);
 		setShowRecordModal(false);
 	};
 
-	const handleNextPage = () => changePage(1);
+	const handleNextPage = () => onChangePage(1);
+	const handlePreviousPage = () => onChangePage(-1);
 
 	const handleFinishButton = async () => {
 		if (pageNumber !== numPages) return;
 		setIsLocked(true);
+		lastLockTriggerSlideRef.current = pageNumber; // treat Finish like an explicit lock trigger
 		onSlideLockTriggered(pageNumber, true);
 	};
 
@@ -487,8 +505,8 @@ export default function PDFViewer() {
 					<div className="pdf-toolbar">
 						<div className="page-controls">
 							<button
-								onClick={() => changePage(-1)}
-								disabled={pageNumber <= 1}
+								onClick={handlePreviousPage}
+								disabled={pageNumber <= 1 || isFinalComplete}
 								className="control-btn"
 							>
 								Previous
@@ -499,9 +517,12 @@ export default function PDFViewer() {
 							<AdvanceSlideButton
 								pageNumber={pageNumber}
 								numPages={numPages}
-								disabled={isLocked || !isRecording}
 								handleFinishButton={handleFinishButton}
 								handleNextPage={handleNextPage}
+								isReviewingPast={isReviewingPast}
+								isRecording={isRecording}
+								isLocked={isLocked}
+								furthestVisited={furthestVisited}
 							/>
 
 							{/* Lock indicator and control */}
@@ -539,12 +560,6 @@ export default function PDFViewer() {
 			</div>
 
 			<div className="pdf-content">
-				{loading && (
-					<div className="pdf-loading">
-						<p>Loading PDF...</p>
-					</div>
-				)}
-
 				{error && (
 					<div className="pdf-error">
 						<p>{error}</p>
@@ -585,6 +600,14 @@ export default function PDFViewer() {
 					onContinue={endAnswerWindow}
 				/>
 			</div>
+
+			<input
+				ref={replaceInputRef}
+				type="file"
+				accept="application/pdf"
+				onChange={handleFileUpload}
+				style={{ display: "none" }}
+			/>
 		</div>
 	);
 }
