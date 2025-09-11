@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button } from "./ui/button";
+
 import { useSession } from "../hooks/useSession";
 
 export default function LandingPage() {
@@ -22,56 +22,48 @@ export default function LandingPage() {
 	};
 
 	return (
-		<main className="min-h-screen flex items-center justify-center p-6 bg-background text-foreground">
+		<main className="min-h-screen flex items-center justify-center p-6 bg-gray-50">
 			<div className="w-full max-w-3xl">
-				<h1 className="text-2xl font-semibold mb-6 text-center text-foreground">
-					Welcome
-				</h1>
+				<h1 className="text-2xl font-semibold mb-6 text-center">Welcome</h1>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 					{/* Student card */}
-					<Button
-						variant="ghost"
+					<button
 						type="button"
 						onClick={onStudent}
 						aria-label="Start or resume student session"
 						className={[
-							"flex-col items-start justify-start text-left gap-2 h-auto",
-							"rounded-2xl p-6 transition transform",
-							"bg-card border border-border",
-							"hover:shadow-md hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-							selectedRole === "student" ? "ring-2 ring-ring" : "",
+							"text-left rounded-2xl border p-6 bg-white transition transform",
+							"hover:shadow-md hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500",
+							selectedRole === "student" ? "ring-2 ring-blue-500" : "",
 						].join(" ")}
 					>
-						<div className="text-lg font-semibold ">
+						<div className="text-lg font-semibold mb-1">
 							{sessionId ? "Resume Student Session" : "Student"}
 						</div>
-						<p className="text-sm text-muted-foreground">
+						<p className="text-sm text-gray-600">
 							{sessionId
 								? `Continue${studentName ? ` as ${studentName}` : ""}.`
 								: "Start a new session and present your pitch."}
 						</p>
-					</Button>
+					</button>
 
 					{/* Professor card */}
-					<Button
-						variant="ghost"
+					<button
 						type="button"
 						onClick={onProfessor}
 						aria-label="Go to professor dashboard"
 						className={[
-							"flex-col items-start justify-start text-left gap-2 h-auto",
-							"rounded-2xl p-6 transition transform",
-							"bg-card border border-border",
-							"hover:shadow-md hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-							selectedRole === "professor" ? "ring-2 ring-ring" : "",
+							"text-left rounded-2xl border p-6 bg-white transition transform",
+							"hover:shadow-md hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500",
+							selectedRole === "professor" ? "ring-2 ring-blue-500" : "",
 						].join(" ")}
 					>
-						<div className="text-lg font-semibold">Professor</div>
-						<p className="text-sm text-muted-foreground">
+						<div className="text-lg font-semibold mb-1">Professor</div>
+						<p className="text-sm text-gray-600">
 							Log in to view student sessions
 						</p>
-					</Button>
+					</button>
 				</div>
 			</div>
 		</main>

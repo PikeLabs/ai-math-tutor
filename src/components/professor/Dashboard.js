@@ -3,9 +3,6 @@ import { useMemo, useState, useCallback } from "react";
 import SessionFeedbackTable from "./SessionFeedbackTable";
 import RefreshIcon from "../ui/RefreshIcon";
 import LogoutButton from "../ui/LogoutButton";
-import { Input } from "../ui/input";
-import { Button } from "../ui/button";
-import { Alert, AlertTitle, AlertDescription } from "../ui/alert";
 
 import { listProfessorSessions } from "../../services/api";
 import { usePolling } from "../../hooks/usePolling";
@@ -13,7 +10,6 @@ import { usePolling } from "../../hooks/usePolling";
 export default function Dashboard() {
 	const [rows, setRows] = useState([]);
 	const [error, setError] = useState("");
-	const [manualRefreshing, setManualRefreshing] = useState(false);
 
 	// UI state
 	const [query, setQuery] = useState("");
@@ -51,18 +47,10 @@ export default function Dashboard() {
 		setPage(next);
 	};
 
-	const handleRefresh = async () => {
+	const handleRefresh = () => {
 		setError("");
-		setManualRefreshing(true);
-
-		try {
-			// manual one-off refresh
-			void tick({ minDurationMs: 1000 }); // give UI time to update
-		} catch {
-			setError("Failed to refresh");
-		} finally {
-			setManualRefreshing(false);
-		}
+		// manual one-off refresh
+		void tick({ minDurationMs: 1000 }); // give UI time to update
 	};
 
 	const handleSearch = (e) => {
@@ -133,58 +121,46 @@ export default function Dashboard() {
 		return sorted.slice(start, start + pageSize);
 	}, [sorted, page, pageSize]);
 
-	const loading = isLoading || manualRefreshing;
 	return (
 		<div className="p-6">
 			<div className="flex items-center justify-between mb-2">
-				<h1 className="text-xl font-semibold text-foreground">
-					Professor Dashboard
-				</h1>
+				<h1 className="text-xl font-semibold">Professor Dashboard</h1>
 				<LogoutButton />
 			</div>
 
-			<div className="no-print mb-4 flex flex-col justify-between gap-2 sm:flex-row">
-				<Input
+			<div className="flex flex-row justify-between gap-2 no-print mb-4">
+				<input
 					type="search"
 					value={query}
 					onChange={handleSearch}
-					placeholder="Search by Student Name…"
-					className="w-full max-w-xs"
-					aria-label="Search by Student Name"
+					placeholder="Search by student name…"
+					className="border rounded px-3 py-1.5 text-sm w-1/4"
+					aria-label="Search by student name"
 				/>
-				<Button
-					variant="outline"
-					size="sm"
+				<button
 					onClick={handleRefresh}
-					className="inline-flex items-center gap-2"
+					className="px-3 py-1.5 text-sm rounded border flex items-center gap-2"
 					aria-label="Refresh"
 					title="Refresh"
-					disabled={loading}
+					disabled={isLoading}
 				>
-					<RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+					<RefreshIcon
+						className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+					/>
 					<span className="hidden sm:inline">
-						{loading ? "Refreshing…" : "Refresh"}
+						{isLoading ? "Refreshing…" : "Refresh"}
 					</span>
-				</Button>
+				</button>
 			</div>
 
-			{error && (
-				<Alert
-					variant="destructive"
-					className="mb-2"
-				>
-					<AlertTitle>Error</AlertTitle>
-					<AlertDescription>{error}</AlertDescription>
-				</Alert>
-			)}
-
-			{loading && !rows.length && (
-				<div className="mb-2 text-sm text-muted-foreground">Loading…</div>
+			{error && <div className="text-sm text-red-600 mb-2">Error: {error}</div>}
+			{isLoading && !rows.length && (
+				<div className="text-sm text-gray-500 mb-2">Loading…</div>
 			)}
 
 			<SessionFeedbackTable
 				rows={paged}
-				busy={loading}
+				busy={isLoading}
 				sortField={sortField}
 				sortDir={sortDir}
 				onSortChange={handleSort}
@@ -195,44 +171,35 @@ export default function Dashboard() {
 				<div>
 					Page {page} of {totalPages} • {sorted.length} total
 				</div>
-
 				<div className="flex items-center gap-1">
-					<Button
-						variant="outline"
-						size="sm"
-						className="h-auto"
+					<button
+						className="px-2 py-1 rounded border"
 						onClick={() => handlePageChange(1)}
 						disabled={page === 1}
 					>
 						« First
-					</Button>
-					<Button
-						variant="outline"
-						size="sm"
-						className="h-auto"
+					</button>
+					<button
+						className="px-2 py-1 rounded border"
 						onClick={() => handlePageChange(page - 1)}
 						disabled={page === 1}
 					>
 						‹ Prev
-					</Button>
-					<Button
-						variant="outline"
-						size="sm"
-						className="h-auto"
+					</button>
+					<button
+						className="px-2 py-1 rounded border"
 						onClick={() => handlePageChange(page + 1)}
 						disabled={page === totalPages}
 					>
 						Next ›
-					</Button>
-					<Button
-						variant="outline"
-						size="sm"
-						className="h-auto"
+					</button>
+					<button
+						className="px-2 py-1 rounded border"
 						onClick={() => handlePageChange(totalPages)}
 						disabled={page === totalPages}
 					>
 						Last »
-					</Button>
+					</button>
 				</div>
 			</div>
 		</div>

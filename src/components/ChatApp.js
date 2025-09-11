@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 import TTSService from "../TTSService";
 import Avatar from "../Avatar";
-
 import { useSession } from "../hooks/useSession";
 import { useAppContext } from "../hooks/useAppContext";
 import { useCheckpoint } from "../hooks/useCheckpoint";
@@ -43,10 +42,9 @@ function IncomingChatMessages({
 						key={id}
 						className="mt-2 flex items-center gap-2 pl-10"
 					>
-						<div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 border-t-transparent animate-spin" />
-						<span className="text-sm text-muted-foreground">
-							Preparing question…
-						</span>
+						{" "}
+						<div className="h-4 w-4 rounded-full border-2 border-gray-300 border-t-transparent animate-spin" />
+						<span className="text-sm text-gray-500">Preparing question…</span>
 					</div>
 				);
 			}
@@ -54,11 +52,9 @@ function IncomingChatMessages({
 			return (
 				<div
 					key={id}
-					className="self-start max-w-[70%] flex"
+					className={`message ${role}`}
 				>
-					<div className="px-4 py-3 rounded-2xl bg-muted text-foreground whitespace-pre-wrap break-words leading-relaxed">
-						{content}
-					</div>
+					<div className="message-content">{content}</div>
 				</div>
 			);
 		});
@@ -77,7 +73,7 @@ function IncomingChatMessages({
 		<div className="min-h-0">
 			<div
 				ref={listRef}
-				className="flex-1 p-5 overflow-y-auto flex flex-col gap-4 min-h-0"
+				className="flex-1 p-5 overflow-y-auto flex flex-col gap-[15px] min-h-0 "
 			>
 				{messageContent}
 			</div>
@@ -98,45 +94,47 @@ function GeneratedFeedback({
 	let status = null;
 	if (isLoading && !feedbackGenerated) {
 		return (
-			<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center justify-center">
-				<span className="text-sm text-muted-foreground font-medium">
+			<div className="intervention-status complete flex items-center justify-center">
+				<span className="ml-2.5 text-md text-gray-500 font-medium">
 					Generating feedback...
 				</span>
 			</div>
 		);
 	} else if (genError) {
 		return (
-			<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center justify-center">
-				<span className="mr-2">❌</span>
-				<span className="text-sm text-destructive font-medium">
+			<div className="intervention-status complete flex items-center justify-center">
+				<span className="intervention-indicator mr-2">❌</span>
+				<span className="ml-2.5 text-md text-red-600 font-medium">
 					Failed to generate feedback...
 				</span>
 			</div>
 		);
 	} else if (feedbackGenerated) {
 		return (
-			<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center justify-center">
-				<span className="mr-2">✅</span>
-				<a
-					href="/feedback"
-					className="text-sm font-medium text-primary underline hover:no-underline"
-				>
-					View your feedback
-				</a>
+			<div className="intervention-status complete flex items-center justify-center">
+				<span className="intervention-indicator mr-2">✅</span>
+				<span className="ml-2.5 text-lg text-green-600 font-medium">
+					<a
+						href="/feedback"
+						className="text-green-700 underline hover:no-underline"
+					>
+						View your feedback
+					</a>
+				</span>
 			</div>
 		);
 	} else {
 		// Edge: complete but not started yet (very brief window)
 		status = (
-			<span className="text-sm text-muted-foreground font-medium">
+			<span className="ml-2.5 text-md text-blue-600 font-medium">
 				Preparing to generate feedback…
 			</span>
 		);
 	}
 
 	return (
-		<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center gap-2">
-			<span className="text-sm font-medium">Questions Completed</span>
+		<div className="intervention-status complete">
+			<span className="intervention-text">Questions Completed</span>
 			{status}
 		</div>
 	);
@@ -162,14 +160,14 @@ function VcChatContainer({
 		const vcQuestionsText = `VC Questions (${questionsAsked}/${totalQuestions})`;
 
 		vcDisplay = (
-			<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center gap-2">
-				<span className="text-sm">💬</span>
-				<span className="text-sm font-medium">{vcQuestionsText}</span>
+			<div className="intervention-status">
+				<span className="intervention-indicator">💬</span>
+				<span className="intervention-text">{vcQuestionsText}</span>
 
 				<button
 					onClick={stopCurrentAudio}
 					disabled={!isSpeaking}
-					className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-md border border-border hover:bg-accent disabled:opacity-50"
+					className="stop-speech-btn ml-auto"
 					title="Stop speech"
 				>
 					🔇
@@ -179,9 +177,9 @@ function VcChatContainer({
 	}
 
 	return (
-		<div className="flex flex-col min-h-0 flex-1">
-			<div className="px-5 py-4 border-b border-border text-center">
-				<h1 className="text-base font-semibold">VC Mentor</h1>
+		<div className="chat-container">
+			<div className="chat-header">
+				<h1>VC Mentor</h1>
 			</div>
 
 			{vcDisplay}
@@ -288,8 +286,6 @@ export default function ChatApp() {
 		qaTimestamps,
 		sessionId,
 		clearCheckpoint,
-		numPages,
-		studentName,
 	]);
 
 	// Keep ChatApp in sync with the TTS engine.
@@ -319,7 +315,7 @@ export default function ChatApp() {
 	};
 
 	return (
-		<div className="w-full flex-1 min-h-0 flex flex-col">
+		<div className="chat-panel-container">
 			<Avatar
 				isSpeaking={avatarState.isSpeaking}
 				isLoading={avatarState.isLoading}

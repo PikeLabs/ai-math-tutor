@@ -299,15 +299,6 @@ export default function AppProvider({ children, sessionId }) {
 			setIsPaused(false);
 			setRecordingTime(0);
 
-			// enter presenting mode
-			setInterventionState(INTERVENTION_STATES.presenting);
-
-			// (optional but nice: clean slate for a new run)
-			// setQuestionsAsked(0);
-			// setCurrentSlideRange(null);
-			// setIsCurrentBatchFinal(false);
-			// Remove if bugs
-
 			// Start timer
 			const timer = setInterval(() => {
 				setRecordingTime((prev) => prev + 1);
