@@ -2,17 +2,170 @@
 @tailwind components;
 @tailwind utilities;
 
+/* === shadcn/ui theme tokens for Tailwind v3 === */
+:root {
+	--radius: 0.625rem;
+
+	/* base surface + text */
+	--background: 1 0 0;
+	--foreground: 0.145 0 0;
+
+	/* card & popover */
+	--card: 1 0 0;
+	--card-foreground: 0.145 0 0;
+
+	--popover: 1 0 0;
+	--popover-foreground: 0.145 0 0;
+
+	/* brand / actions */
+	--primary: 0.205 0 0;
+	--primary-foreground: 0.985 0 0;
+
+	/* secondary / muted / accent */
+	--secondary: 0.97 0 0;
+	--secondary-foreground: 0.205 0 0;
+
+	--muted: 0.97 0 0;
+	--muted-foreground: 0.556 0 0;
+
+	--accent: 0.97 0 0;
+	--accent-foreground: 0.205 0 0;
+
+	/* destructive (already triplet earlier, keeping consistent) */
+	--destructive: 0.577 0.245 27.325;
+	--destructive-foreground: 0.985 0 0;
+
+	/* borders/inputs/ring */
+	--border: 0.922 0 0;
+	--input: 0.922 0 0;
+	--ring: 0.708 0 0;
+
+	/* optional charts */
+	--chart-1: 0.646 0.222 41.116;
+	--chart-2: 0.6 0.118 184.704;
+	--chart-3: 0.398 0.07 227.392;
+	--chart-4: 0.828 0.189 84.429;
+	--chart-5: 0.769 0.188 70.08;
+
+	/* sidebar */
+	--sidebar: 0.985 0 0;
+	--sidebar-foreground: 0.145 0 0;
+	--sidebar-primary: 0.205 0 0;
+	--sidebar-primary-foreground: 0.985 0 0;
+	--sidebar-accent: 0.97 0 0;
+	--sidebar-accent-foreground: 0.205 0 0;
+	--sidebar-border: 0.922 0 0;
+	--sidebar-ring: 0.708 0 0;
+}
+
+/* Dark theme overrides – enabled by adding class="dark" to <html> or a wrapper */
+.dark {
+	--background: 0.145 0 0;
+	--foreground: 0.985 0 0;
+
+	--card: 0.205 0 0;
+	--card-foreground: 0.985 0 0;
+
+	--popover: 0.269 0 0;
+	--popover-foreground: 0.985 0 0;
+
+	--primary: 0.922 0 0;
+	--primary-foreground: 0.205 0 0;
+
+	--secondary: 0.269 0 0;
+	--secondary-foreground: 0.985 0 0;
+
+	--muted: 0.269 0 0;
+	--muted-foreground: 0.708 0 0;
+
+	--accent: 0.371 0 0;
+	--accent-foreground: 0.985 0 0;
+
+	--destructive: 0.704 0.191 22.216;
+	--destructive-foreground: 0.205 0 0;
+
+	/* you used alpha here; keep it on the variable */
+	--border: 1 0 0 / 10%;
+	--input: 1 0 0 / 15%;
+	--ring: 0.556 0 0;
+
+	--chart-1: 0.488 0.243 264.376;
+	--chart-2: 0.696 0.17 162.48;
+	--chart-3: 0.769 0.188 70.08;
+	--chart-4: 0.627 0.265 303.9;
+	--chart-5: 0.645 0.246 16.439;
+
+	--sidebar: 0.205 0 0;
+	--sidebar-foreground: 0.985 0 0;
+	--sidebar-primary: 0.488 0.243 264.376;
+	--sidebar-primary-foreground: 0.985 0 0;
+	--sidebar-accent: 0.269 0 0;
+	--sidebar-accent-foreground: 0.985 0 0;
+	--sidebar-border: 1 0 0 / 10%;
+	--sidebar-ring: 0.439 0 0;
+}
+
+/* Apply the CSS variables to the document using Tailwind utilities */
+@layer base {
+	* {
+		@apply border-border;
+	}
+	body {
+		@apply bg-background text-foreground;
+	}
+}
+
 body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: #f5f5f5;
+	margin: 0;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+		"Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+		sans-serif;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+	font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
+		monospace;
+}
+
+@layer utilities {
+	@keyframes pulse-speak {
+		0% {
+			transform: scale(0.95);
+			box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7); /* green */
+		}
+		70% {
+			transform: scale(1);
+			box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+		}
+		100% {
+			transform: scale(0.95);
+			box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+		}
+	}
+	.animate-pulse-speak {
+		animation: pulse-speak 1.5s ease-in-out infinite;
+	}
+
+	@keyframes pulse-process {
+		0% {
+			transform: scale(0.95);
+			opacity: 1;
+			box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.7); /* orange */
+		}
+		50% {
+			transform: scale(1.02);
+			opacity: 0.8;
+			box-shadow: 0 0 0 15px rgba(255, 152, 0, 0);
+		}
+		100% {
+			transform: scale(0.95);
+			opacity: 1;
+			box-shadow: 0 0 0 0 rgba(255, 152, 0, 0);
+		}
+	}
+	.animate-pulse-process {
+		animation: pulse-process 2s ease-in-out infinite;
+	}
 }

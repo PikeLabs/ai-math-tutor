@@ -1,6 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 
+import { Button } from "../ui/button";
 import { useAuth } from "../../hooks/useAuth";
 
 export default function LogoutButton({ className = "" }) {
@@ -18,7 +19,6 @@ export default function LogoutButton({ className = "" }) {
 			await logout(); // calls /auth/professor/logout (with credentials)
 			navigate("/professor", { replace: true });
 		} catch (e) {
-			console.error("Logout failed:", e);
 			// Still send the user to login;
 			navigate("/professor", { replace: true });
 		} finally {
@@ -27,19 +27,14 @@ export default function LogoutButton({ className = "" }) {
 	};
 
 	return (
-		<button
+		<Button
 			onClick={onClick}
 			disabled={busy || loading}
 			title="Sign out"
-			className={[
-				"inline-flex items-center gap-1",
-				"px-3 py-1.5 text-sm font-medium rounded",
-				"border border-gray-400 bg-white text-gray-800",
-				"hover:bg-gray-50 disabled:opacity-60",
-				className,
-			].join(" ")}
+			variant="outline"
+			className={["h-auto inline-flex items-center gap-2", className].join(" ")}
 		>
 			{busy ? "Signing out…" : "Sign out"}
-		</button>
+		</Button>
 	);
 }

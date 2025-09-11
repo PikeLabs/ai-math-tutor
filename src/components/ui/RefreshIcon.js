@@ -4,8 +4,6 @@ export default function RefreshIcon({ className = "" }) {
 		<svg
 			className={className}
 			viewBox="0 0 24 24"
-			width="16"
-			height="16"
 			fill="none"
 			stroke="currentColor"
 			strokeWidth="2"

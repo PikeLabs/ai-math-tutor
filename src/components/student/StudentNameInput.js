@@ -2,6 +2,9 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import BackButton from "../ui/BackButton";
+import { Label } from "../ui/label";
+import { Input } from "../ui/input";
+import { Button } from "../ui/button";
 import { useSession } from "../../hooks/useSession";
 import { createSession } from "../../services/api";
 
@@ -36,14 +39,19 @@ export default function StudentNameInput() {
 				err.message ||
 					"Failed to create a new student session, please try again"
 			);
-			console.error("Failed to create session:", err);
 		} finally {
 			setSubmitting(false);
 		}
 	};
 
 	const errorContent = err && (
-		<div className="text-red-600 text-md font-medium text-center">{err}</div>
+		<div
+			id="student-name-error"
+			role="alert"
+			className="text-sm font-medium text-center text-destructive"
+		>
+			{err}
+		</div>
 	);
 
 	const handleNameInput = (e) => {
@@ -56,35 +64,45 @@ export default function StudentNameInput() {
 	const buttonText = submitting ? "Creating…" : "Continue";
 
 	return (
-		<div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+		<div className="min-h-screen flex items-center justify-center p-6 bg-background text-foreground">
 			<form
 				onSubmit={onSubmit}
-				className="w-full max-w-sm bg-white rounded-2xl shadow p-6 space-y-4"
+				className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-sm p-6 space-y-4"
 			>
 				<BackButton onClick={handleBack} />
 
 				<h1 className="text-xl font-semibold text-center">Welcome 👋</h1>
 
-				<label className="block text-sm">
-					<span className="text-gray-700">Your name</span>
-					<input
-						className="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:border-blue-500"
+				<div className="space-y-2">
+					<Label
+						htmlFor="student-name"
+						className="text-muted-foreground/20"
+					>
+						Your name
+					</Label>
+					<Input
+						id="student-name"
 						value={name}
 						onChange={handleNameInput}
 						placeholder="Ada Lovelace"
 						autoFocus
-						aria-label="Student name"
+						autoComplete="name"
+						required
+						aria-invalid={Boolean(err)}
+						aria-describedby={err ? "student-name-error" : undefined}
+						className="placeholder:text-muted-foreground/60"
 					/>
-				</label>
+				</div>
 
 				{errorContent}
 
-				<button
+				<Button
+					type="submit"
 					disabled={disabled}
-					className="w-full py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+					className="block w-1/2 m-auto h-auto border border-border"
 				>
 					{buttonText}
-				</button>
+				</Button>
 			</form>
 		</div>
 	);
