@@ -31,16 +31,3 @@ __pycache__/
 .Python
 env/
 venv/
-
-# backend/scripts
-backend/scripts/test_out/
-
-
-**/slide_images/
-**/assignments/
-**/audio_sessions/
-
-copy_files.sh
-catch_ai_up.txt
-backend/scripts/manual_deploy.sh
-.github/workflows/deploy-backend.yml
