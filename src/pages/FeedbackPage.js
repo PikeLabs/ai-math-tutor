@@ -5,6 +5,7 @@ import FeedbackReport from "../components/feedback/FeedbackReport";
 import BackButton from "../components/ui/BackButton";
 import { getStudentFeedback } from "../services/api";
 import { useSession } from "../hooks/useSession";
+import { Separator } from "../components/ui/separator";
 
 // import { getTestFeedback } from "../services/api";
 const emptyFeedback = {
@@ -75,8 +76,11 @@ export default function FeedbackPage() {
 	);
 
 	let loadingContent = isLoading && (
-		<div className="flex items-center justify-center py-6 text-gray-500 text-sm">
-			<div className="animate-spin h-5 w-5 border-2 border-gray-300 border-t-blue-500 rounded-full mr-2"></div>
+		<div
+			className="flex items-center justify-center py-6 text-sm text-muted-foreground"
+			role="status"
+		>
+			<div className="mr-2 h-5 w-5 rounded-full border-2 border-border border-t-primary animate-spin" />
 			Loading feedback details...
 		</div>
 	);
@@ -86,13 +90,13 @@ export default function FeedbackPage() {
 	);
 
 	const errorContent = error && !isLoading && (
-		<div className="text-red-600 text-md font-medium text-center mb-4">
+		<div className="text-destructive text-sm font-medium text-center mb-4">
 			{error}
 		</div>
 	);
 
 	return (
-		<div className="flex flex-col items-center p-2">
+		<div className="flex flex-col items-center p-4 md:p-6">
 			<div className="w-full max-w-5xl">
 				<div className="flex justify-between items-center mb-4">
 					{homeButton}
@@ -101,6 +105,8 @@ export default function FeedbackPage() {
 					</h1>
 					{newPresentationButton}
 				</div>
+
+				<Separator className="mb-4" />
 				{loadingContent}
 				{errorContent}
 				{feedbackContent}
