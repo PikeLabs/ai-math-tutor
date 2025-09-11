@@ -1,24 +1,17 @@
-import { Button } from "./button";
-
 export default function BackButton({
 	onClick,
 	ariaLabel = "Return to Home",
 	buttonText = "← Back to Home",
 }) {
 	return (
-		<Button
+		<button
 			type="button"
-			variant="ghost"
 			onClick={onClick}
+			className="text-blue-600 hover:underline text-md mb-4"
 			aria-label={ariaLabel}
 			title={ariaLabel}
-			className={[
-				"text-primary hover:underline", // link-like look
-				"rounded-md px-1 mb-4", // space for focus ring + spacing
-				"h-auto", // don't force h-10
-			].join(" ")}
 		>
 			{buttonText}
-		</Button>
+		</button>
 	);
 }

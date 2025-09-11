@@ -1,13 +1,5 @@
 import SessionFeedbackRow from "./SessionFeedbackRow";
 import TableSortHeader from "../ui/TableSortHeader";
-import {
-	Table,
-	TableHeader,
-	TableRow,
-	TableHead,
-	TableBody,
-	TableCell,
-} from "../ui/table";
 
 export default function SessionFeedbackTable({
 	rows = [],
@@ -17,73 +9,43 @@ export default function SessionFeedbackTable({
 	onSortChange,
 }) {
 	return (
-		<div className="rounded-2xl border border-border bg-card overflow-hidden">
-			<Table>
-				<TableHeader className="bg-muted/40">
-					<TableRow>
-						<TableHead className="w-[84px] px-4 py-3 text-foreground font-semibold">
-							Expand
-						</TableHead>
-
-						<TableHead className="px-4 py-3">
-							<TableSortHeader
-								field="student"
-								label="Student"
-								sortField={sortField}
-								sortDir={sortDir}
-								onSortChange={onSortChange}
-								className="font-semibold"
-							/>
-						</TableHead>
-
-						<TableHead className="px-4 py-3">
-							<TableSortHeader
-								field="createdAt"
-								label="Created"
-								sortField={sortField}
-								sortDir={sortDir}
-								onSortChange={onSortChange}
-								className="font-semibold"
-							/>
-						</TableHead>
-
-						<TableHead className="px-4 py-3">
-							<TableSortHeader
-								field="completedAt"
-								label="Completed"
-								sortField={sortField}
-								sortDir={sortDir}
-								onSortChange={onSortChange}
-								className="font-semibold"
-							/>
-						</TableHead>
-
-						<TableHead className="px-4 py-3 text-foreground font-semibold">
-							Score
-						</TableHead>
-					</TableRow>
-				</TableHeader>
-
-				<TableBody>
-					{/* Keep your existing row renderer */}
-					<SessionFeedbackRow
-						rows={rows}
-						busy={busy}
+		<table className="w-full rounded overflow-hidden bg-white border border-gray-200">
+			<thead className="border-b border-gray-400 bg-gray-100">
+				<tr className="text-left border-b">
+					<th className="px-4 py-3 font-semibold">Expand</th>
+					<TableSortHeader
+						field="student"
+						label="Student"
+						sortField={sortField}
+						sortDir={sortDir}
+						onSortChange={onSortChange}
+						className="px-4 py-3 font-semibold"
 					/>
-
-					{/* Nice empty state when not busy */}
-					{!busy && (!rows || rows.length === 0) && (
-						<TableRow>
-							<TableCell
-								colSpan={5}
-								className="h-24 text-center text-sm text-muted-foreground"
-							>
-								No sessions yet.
-							</TableCell>
-						</TableRow>
-					)}
-				</TableBody>
-			</Table>
-		</div>
+					<TableSortHeader
+						field="createdAt"
+						label="Created"
+						sortField={sortField}
+						sortDir={sortDir}
+						onSortChange={onSortChange}
+						className="px-4 py-3 font-semibold"
+					/>
+					<TableSortHeader
+						field="completedAt"
+						label="Completed"
+						sortField={sortField}
+						sortDir={sortDir}
+						onSortChange={onSortChange}
+						className="px-4 py-3 font-semibold"
+					/>
+					<th className="px-4 py-3 font-semibold">Score</th>
+				</tr>
+			</thead>
+			<tbody>
+				<SessionFeedbackRow
+					rows={rows}
+					busy={busy}
+				/>
+			</tbody>
+		</table>
 	);
 }

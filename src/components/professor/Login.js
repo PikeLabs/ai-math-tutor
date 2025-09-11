@@ -2,9 +2,6 @@ import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 import BackButton from "../ui/BackButton";
-import { Label } from "../ui/label";
-import { Input } from "../ui/input";
-import { Button } from "../ui/button";
 import { useAuth } from "../../hooks/useAuth";
 
 export default function Login() {
@@ -36,13 +33,7 @@ export default function Login() {
 	};
 
 	const errorContent = err && (
-		<div
-			id="prof-password-error"
-			role="alert"
-			className="text-destructive text-sm font-medium text-center"
-		>
-			{err}
-		</div>
+		<div className="text-red-600 text-md font-medium text-center">{err}</div>
 	);
 
 	const handlePasswordInput = (e) => {
@@ -50,51 +41,38 @@ export default function Login() {
 	};
 
 	const handleBack = () => navigate("/");
-
 	const disabled = submitting || !password.trim().length;
 	const buttonText = submitting ? "Signing in…" : "Sign In";
 
 	return (
-		<div className="min-h-screen flex items-center justify-center p-6 bg-background text-foreground">
+		<div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
 			<form
 				onSubmit={onSubmit}
-				className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-sm p-6 space-y-4"
+				className="w-full max-w-sm bg-white rounded-2xl shadow p-6 space-y-4"
 			>
 				<BackButton onClick={handleBack} />
 
 				<h1 className="text-xl font-semibold text-center">Professor Login</h1>
-
-				<div className="space-y-2">
-					<Label
-						htmlFor="prof-password"
-						className="text-muted-foreground"
-					>
-						Password
-					</Label>
-					<Input
-						id="prof-password"
+				<label className="block text-sm">
+					<span className="text-gray-700">Password</span>
+					<input
+						type="password"
+						className="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:border-blue-500"
 						value={password}
 						onChange={handlePasswordInput}
 						autoFocus
-						autoComplete="current-password"
-						required
-						type="password"
 						aria-label="Professor password"
-						aria-invalid={Boolean(err)}
-						aria-describedby={err ? "prof-password-error" : undefined}
-						className="placeholder:text-muted-foreground/60"
 					/>
-				</div>
+				</label>
 
 				{errorContent}
 
-				<Button
-					type="submit"
+				<button
 					disabled={disabled}
-					className="block w-1/2 m-auto h-auto border border-border"
+					className="w-full py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
 				>
 					{buttonText}
-				</Button>
+				</button>
 			</form>
 		</div>
 	);

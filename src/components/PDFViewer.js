@@ -5,8 +5,6 @@ import "react-pdf/dist/Page/TextLayer.css";
 
 import RecordPromptModal from "./modal/RecordPromptModal";
 import { PausedIcon, RecordingIcon } from "./ui/RecordingIcon";
-import { Button } from "./ui/button";
-
 import { postPdfForSlides } from "../services/api";
 import { useAppContext } from "../hooks/useAppContext";
 import { useSession } from "../hooks/useSession";
@@ -25,8 +23,6 @@ function RecordingBar({
 	answerActive,
 	answerSecondsDefault,
 	onContinue,
-	uploadedFile,
-	isActive,
 }) {
 	const [answerSecondsLeft, setAnswerSecondsLeft] = useState(-1);
 	const answerTimerRef = useRef(null);
@@ -41,7 +37,6 @@ function RecordingBar({
 	useEffect(() => {
 		onContinueRef.current = onContinue;
 	}, [onContinue]);
-
 	useEffect(() => {
 		if (inQA && answerActive) {
 			if (answerTimerRef.current) {
@@ -80,10 +75,11 @@ function RecordingBar({
 		};
 	}, [inQA, answerActive, answerSecondsDefault]);
 
-	if (!uploadedFile || !isActive || isFinished) return null;
-
 	// ----- Recording status row -----
-	let statusRow = null;
+	const textStyles = "text-md font-medium";
+	let statusRow = (
+		<div className={`${textStyles} text-gray-500`}>Waiting to start...</div>
+	);
 	let formattedTime =
 		isPaused || isRecording ? formatTime(recordingTime) : null;
 
@@ -91,12 +87,9 @@ function RecordingBar({
 	if (isPaused) {
 		statusRow = (
 			<>
-				<div className="md:text-base font-medium">Recording Paused</div>
-				<PausedIcon
-					className="text-muted-foreground"
-					size={20}
-				/>
-				<span className="ml-3 text-sm md:text-base font-medium text-muted-foreground">
+				{/* <div className={`${textStyles} text-white`}>Recording Paused</div> */}
+				<PausedIcon />
+				<span className="ml-3 text-md font-medium text-gray-400">
 					{formattedTime}
 				</span>
 			</>
@@ -104,15 +97,14 @@ function RecordingBar({
 	} else if (isRecording) {
 		statusRow = (
 			<>
-				<RecordingIcon
-					className="text-destructive"
-					size={20}
-				/>
-				<span className="ml-3 text-sm md:text-base font-medium text-destructive">
+				<RecordingIcon />
+				<span className="ml-3 text-md font-medium text-red-600">
 					{formattedTime}
 				</span>
 			</>
 		);
+	} else if (isFinished) {
+		statusRow = null;
 	}
 
 	let countdownTimerContent = null;
@@ -133,22 +125,22 @@ function RecordingBar({
 
 		countdownTimerContent = (
 			<div className="flex items-center justify-center gap-3">
-				<div className="px-3 py-1 rounded bg-amber-100 text-amber-800 font-semibold">
+				<div className="px-3 py-1 rounded bg-yellow-100 text-yellow-800 font-semibold">
 					Time left: {timeLeft}
 				</div>
-				<Button
+				<button
 					onClick={handleOnContinue}
-					className="h-auto"
+					className="control-btn"
 					title="Finish answer and continue"
 				>
 					Continue
-				</Button>
+				</button>
 			</div>
 		);
 	}
 
 	return (
-		<div className="w-full flex flex-row items-center justify-center py-3 gap-4">
+		<div className="w-full flex flex-col items-center justify-center py-3 gap-2">
 			<div className="flex items-center">{statusRow}</div>
 			{countdownTimerContent}
 		</div>
@@ -179,13 +171,13 @@ function AdvanceSlideButton({
 	const onClickHandler = isLastPage ? handleFinishButton : handleNextPage;
 
 	return (
-		<Button
-			className="h-auto"
+		<button
+			className="control-btn"
 			disabled={disableButton}
 			onClick={onClickHandler}
 		>
 			{buttonText}
-		</Button>
+		</button>
 	);
 }
 
@@ -236,8 +228,6 @@ export default function PDFViewer() {
 		interventionState === INTERVENTION_STATES.final_complete;
 	const isInterventionComplete =
 		interventionState === INTERVENTION_STATES.batch_complete || isFinalComplete;
-	const isActive = interventionState !== INTERVENTION_STATES.inactive;
-	console.log("interventionState:", interventionState);
 
 	// When the student is viewing a slide before the furthest they've actually presented,
 	// we are in "catch-up" review mode.
@@ -471,7 +461,7 @@ export default function PDFViewer() {
 	}`;
 
 	return (
-		<div className="flex h-full min-h-0 flex-col">
+		<div className="pdf-viewer">
 			<RecordPromptModal
 				open={showRecordModal}
 				onClose={handleCloseRecordingModal}
@@ -479,26 +469,18 @@ export default function PDFViewer() {
 				onUploadDifferent={handleUploadDifferent}
 			/>
 
-			<div
-				className={
-					uploadedFile
-						? "px-5 py-4 border-b border-border"
-						: "px-5 py-8 border-b border-border min-h-full flex items-center"
-				}
-			>
-				<div className="mb-4 flex flex-1 items-center">
+			<div className="pdf-controls">
+				<div className="file-upload-section">
 					{!uploadedFile && (
-						<div className="w-full flex items-center justify-center">
+						<div className="upload-container">
 							<label
 								htmlFor="pdf-upload"
-								className="block w-full max-w-xl mx-auto text-center cursor-pointer rounded-xl border-2 border-dashed border-primary/40 bg-muted/50 px-5 py-[3.25rem] transition-all hover:-translate-y-0.5 hover:bg-accent/30"
+								className="upload-label"
 							>
-								<div className="flex flex-col items-center gap-3">
-									<div className="text-5xl">📄</div>
-									<div className="text-lg font-semibold">
-										Upload your assignment
-									</div>
-									<div className="text-sm text-muted-foreground">
+								<div className="upload-content">
+									<div className="upload-icon">📄</div>
+									<div className="upload-text">Upload your assignment</div>
+									<div className="upload-subtext">
 										Select a PDF file to get started
 									</div>
 								</div>
@@ -508,6 +490,7 @@ export default function PDFViewer() {
 								type="file"
 								accept="application/pdf"
 								onChange={handleFileUpload}
+								className="file-input"
 								style={{ display: "none" }}
 							/>
 						</div>
@@ -515,16 +498,16 @@ export default function PDFViewer() {
 				</div>
 
 				{uploadedFile && (
-					<div className="flex flex-wrap items-center justify-between gap-5">
-						<div className="flex items-center gap-3">
-							<Button
+					<div className="pdf-toolbar">
+						<div className="page-controls">
+							<button
 								onClick={handlePreviousPage}
 								disabled={pageNumber <= 1 || isFinalComplete}
-								className="h-auto"
+								className="control-btn"
 							>
 								Previous
-							</Button>
-							<span className="text-sm text-muted-foreground font-medium">
+							</button>
+							<span className="page-info">
 								Page {pageNumber} of {numPages || "?"}
 							</span>
 							<AdvanceSlideButton
@@ -539,7 +522,7 @@ export default function PDFViewer() {
 							/>
 
 							{/* Lock indicator and control */}
-							<div className="flex items-center gap-2 ml-3 pl-3 border-l border-border">
+							<div className="lock-controls">
 								<span
 									role="img"
 									aria-label={lockTitle}
@@ -549,58 +532,48 @@ export default function PDFViewer() {
 									{lockIcon}
 								</span>
 
-								{isLocked && (
-									<span className="text-xs font-medium text-amber-800 bg-amber-100 border border-amber-200 rounded px-2 py-0.5">
-										{lockText}
-									</span>
-								)}
+								{isLocked && <span className="lock-status">{lockText}</span>}
 							</div>
 						</div>
 
-						<div className="flex items-center gap-3">
-							<Button
+						<div className="zoom-controls">
+							<button
 								onClick={zoomOut}
-								className="h-auto"
+								className="control-btn"
 							>
 								Zoom Out
-							</Button>
-							<span className="text-sm text-muted-foreground font-medium">
-								{Math.round(scale * 100)}%
-							</span>
-							<Button
+							</button>
+							<span className="zoom-info">{Math.round(scale * 100)}%</span>
+							<button
 								onClick={zoomIn}
-								className="h-auto"
+								className="control-btn"
 							>
 								Zoom In
-							</Button>
+							</button>
 						</div>
 					</div>
 				)}
 			</div>
 
-			<div className="flex-1 min-h-0 overflow-auto p-3 sm:p-5 bg-muted">
+			<div className="pdf-content">
 				{error && (
-					<div className="flex items-center justify-center h-full text-destructive">
+					<div className="pdf-error">
 						<p>{error}</p>
 					</div>
 				)}
 
 				{uploadedFile && (
-					<div className="w-full min-h-full grid place-items-center">
+					<div className="pdf-document">
 						<Document
 							file={uploadedFile}
 							onLoadSuccess={onDocumentLoadSuccess}
 							onLoadError={onDocumentLoadError}
 							loading={
-								<div className="flex items-center justify-center h-full text-muted-foreground">
+								<div className="pdf-loading">
 									<p>Loading PDF...</p>
 								</div>
 							}
-							error={
-								<div className="flex items-center justify-center h-full text-destructive">
-									Failed to load PDF
-								</div>
-							}
+							error={<div>Failed to load PDF</div>}
 							noData={<div>No PDF file specified</div>}
 						>
 							{numPages && (
@@ -616,7 +589,7 @@ export default function PDFViewer() {
 				)}
 			</div>
 
-			<div className="border-t border-border bg-card">
+			<div className="recording-section">
 				<RecordingBar
 					isRecording={isRecording}
 					isPaused={isPaused}
@@ -625,8 +598,6 @@ export default function PDFViewer() {
 					answerActive={answerActive}
 					answerSecondsDefault={answerSecondsDefault}
 					onContinue={endAnswerWindow}
-					uploadedFile={uploadedFile}
-					isActive={isActive}
 				/>
 			</div>
 

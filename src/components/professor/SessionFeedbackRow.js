@@ -6,9 +6,7 @@ import PrintWrapper from "../ui/PrintWrapper";
 import Chevron from "../ui/Chevron";
 import { toLocale } from "../../utils";
 import { getProfessorSession } from "../../services/api";
-import { TableRow, TableCell } from "../ui/table";
-import { Button } from "../ui/button";
-import { Alert, AlertTitle, AlertDescription } from "../ui/alert";
+
 
 const FEEDBACK_TABLE_COLUMNS = 5;
 
@@ -24,12 +22,8 @@ function DropDownContainer({
 
 	if (isLoading) {
 		return (
-			<div
-				className="flex items-center justify-center py-6 text-sm text-muted-foreground"
-				aria-live="polite"
-				aria-atomic="true"
-			>
-				<div className="mr-2 h-5 w-5 rounded-full border-2 border-border border-t-primary animate-spin" />
+			<div className="flex items-center justify-center py-6 text-gray-500 text-sm">
+				<div className="animate-spin h-5 w-5 border-2 border-gray-300 border-t-blue-500 rounded-full mr-2"></div>
 				Loading feedback details...
 			</div>
 		);
@@ -37,27 +31,23 @@ function DropDownContainer({
 
 	if (error) {
 		return (
-			<Alert
-				variant="destructive"
-				className="my-2"
-			>
-				<AlertTitle>Failed to load feedback</AlertTitle>
-				<AlertDescription>{String(error)}</AlertDescription>
-			</Alert>
+			<div className="text-md text-red-600 font-medium py-3">
+				Something went wrong while retrieving the session feedback details{" "}
+				{error}
+			</div>
 		);
 	} else if (feedbackData) {
 		return (
 			<div>
 				<div className="flex justify-end mb-2">
-					<Button
+					<button
 						type="button"
-						variant="outline"
 						onClick={onPrint}
-						className="no-print h-auto inline-flex items-center gap-2"
+						className="no-print inline-flex items-center gap-2 rounded-lg border px-3 py-1 text-sm font-medium hover:bg-gray-100"
 						aria-label="Print this feedback report"
 					>
 						🖨️ Print
-					</Button>
+					</button>
 				</div>
 				<PrintWrapper ref={printRef}>
 					<FeedbackReport feedback={feedbackData} />
@@ -67,7 +57,7 @@ function DropDownContainer({
 	}
 
 	return (
-		<div className="py-3 text-sm text-muted-foreground">
+		<div className="text-md text-gray-500 py-3">
 			No feedback available for this session.
 		</div>
 	);
@@ -78,18 +68,16 @@ function DropDownButton({ toggleOpen, onClick }) {
 		? "Collapse feedback details"
 		: "Expand feedback details";
 	return (
-		<Button
+		<button
 			type="button"
 			onClick={onClick}
-			variant="link"
-			size="sm"
-			className="inline-flex items-center gap-2 shrink-0 h-auto px-0 underline-offset-4"
+			className="inline-flex items-center gap-2 shrink-0"
 			aria-expanded={toggleOpen}
 			aria-label={ariaLabel}
 		>
 			<Chevron open={toggleOpen} />
-			<span>Details</span>
-		</Button>
+			<span className="underline decoration-dotted">Details</span>
+		</button>
 	);
 }
 
@@ -178,42 +166,33 @@ function SessionFeedbackDetails({ session }) {
 	const animMaxHeight = animReady && toggleOpen ? "max-h-[2000px]" : "max-h-0";
 	const animHeightClass = `transition-[max-height] duration-300 ease-in-out overflow-hidden ${animMaxHeight}`;
 	const animOpacity = toggleOpen ? "opacity-100" : "opacity-0";
-	const animOpacityClass = `p-4 transition-opacity duration-300 bg-card text-foreground ${animOpacity}`;
+	const animOpacityClass = `p-4 transition-opacity duration-300 ${animOpacity}`;
 
 	return (
 		<>
 			{/* Collapsed row */}
-			<TableRow className="w-full border-b border-border">
-				<TableCell className="py-2 text-sm font-medium">
+			<tr className="w-full border-b border-gray-200">
+				<td className="py-2 text-md font-medium">
 					<DropDownButton
 						toggleOpen={toggleOpen}
 						onClick={handleDropdownToggle}
 					/>
-				</TableCell>
-
-				{/* Student */}
-				<TableCell className="py-2 text-sm font-medium text-foreground">
-					{studentName}
-				</TableCell>
-
-				{/* Created */}
-				<TableCell className="py-2 text-sm text-foreground">
-					{meta.created}
-				</TableCell>
-
-				{/* Completed */}
-				<TableCell className="py-2 text-sm text-foreground">
-					{meta.completed}
-				</TableCell>
-
-				{/* Score */}
-				<TableCell className="py-2 text-center text-sm font-medium text-foreground">
+				</td>
+				{/* Student column */}
+				<td className="py-2 text-md font-medium">{studentName}</td>
+				{/* Created column */}
+				<td className="py-2 text-md font-medium">{meta.created}</td>
+				{/* Completed column */}
+				<td className="py-2 text-md font-medium">{meta.completed}</td>
+				{/* Score column */}
+				<td className="text-center font-medium py-2 text-md font-medium">
 					{meta.presentationScore}
-				</TableCell>
-			</TableRow>
+				</td>
+			</tr>
 
-			<TableRow className="border-b bg-muted/40">
-				<TableCell
+			{/* Expanded content row */}
+			<tr className="border-b bg-gray-50">
+				<td
 					colSpan={FEEDBACK_TABLE_COLUMNS}
 					className="p-0"
 				>
@@ -232,8 +211,8 @@ function SessionFeedbackDetails({ session }) {
 							/>
 						</div>
 					</div>
-				</TableCell>
-			</TableRow>
+				</td>
+			</tr>
 		</>
 	);
 }
@@ -242,14 +221,14 @@ export default function SessionFeedbackRow({ rows = [], busy = false }) {
 	if (!rows || rows.length === 0) {
 		const rowContent = busy ? "Loading..." : "No sessions found";
 		return (
-			<TableRow className="w-full border-b border-border">
-				<TableCell
+			<tr className="w-full border-b border-gray-200">
+				<td
 					colSpan={FEEDBACK_TABLE_COLUMNS}
-					className="py-4 text-center text-sm text-muted-foreground"
+					className="py-2 pl-2 text-center text-gray-500"
 				>
 					{rowContent}
-				</TableCell>
-			</TableRow>
+				</td>
+			</tr>
 		);
 	}
 
