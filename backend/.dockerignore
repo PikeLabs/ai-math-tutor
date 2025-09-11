@@ -1,0 +1,38 @@
+# --- VCS & editor cruft ---
+.git
+.gitignore
+.vscode
+**/.DS_Store
+
+# --- Python bytecode / caches ---
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.venv/
+venv/
+
+# --- Env files ---
+.env
+.env.*
+
+# --- Logs & temp ---
+*.log
+server_debug.log
+*.tmp
+*.swp
+*.swo
+
+# --- Runtime/output dirs you mount at runtime ---
+**/slide_images/
+**/assignments/
+**/audio_sessions/
+storage/
+
+# --- Test artifacts ---
+scripts/test_out/
+htmlcov/
+.coverage

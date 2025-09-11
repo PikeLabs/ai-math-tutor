@@ -1,0 +1,36 @@
+# backend/Dockerfile (production)
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PRISMA_USE_NODEJS_BIN=1 \
+    PRISMA_GENERATE_ON_BOOT=1 \
+    PRISMA_MIGRATE_MODE=deploy \
+    APP_ENV=production
+
+# System deps you actually use
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl \
+    poppler-utils ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Workdir
+WORKDIR /app/backend
+
+# Install Python deps first for better layer caching
+COPY requirements.txt /app/requirements.txt
+RUN python -m pip install --upgrade pip && \
+    python -m pip install -r /app/requirements.txt
+
+# Copy prisma (generation happens at runtime via start_backend.sh)
+COPY prisma ./prisma
+
+# Now copy the rest of the backend code
+COPY . /app/backend
+
+# Expose (App Runner will inject $PORT)
+EXPOSE 5001
+
+# Start via our script (will run prisma migrate deploy safely, then launch gunicorn)
+CMD ["bash", "/app/backend/scripts/start_backend.sh"]
