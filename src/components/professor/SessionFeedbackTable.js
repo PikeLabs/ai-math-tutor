@@ -21,7 +21,6 @@ export default function SessionFeedbackTable({
 						onSortChange={onSortChange}
 						className="px-4 py-3 font-semibold"
 					/>
-					<th>Session ID</th>
 					<TableSortHeader
 						field="createdAt"
 						label="Created"

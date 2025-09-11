@@ -18,6 +18,7 @@ def _process_chat_request(
     slide_number: int | None,
     timestamp: str | None,
     audio_transcription: str | None,
+    persist: bool = True,
 ):
     """
     Shared chat flow:
@@ -27,6 +28,7 @@ def _process_chat_request(
       4) persist assistant reply
       5) return (payload, error_message)
     """
+
     # --- Validate ---
     if not isinstance(messages, list) or not messages:
         return None, "Messages (array) are required"
@@ -51,17 +53,18 @@ def _process_chat_request(
             f"{student_text}\n\n[Transcription]\n{audio_transcription}".strip()
         )
 
-    try:
-        if student_text:
-            add_conversation(
-                session_id=session_id,
-                role="student",
-                content=student_text,
-                slide_number=slide_number_int,
-                timestamp=timestamp,  # FE sends ISO string; DB layer normalizes
-            )
-    except Exception as e:
-        return None, f"Chat failed to log student message: {e}"
+    if persist:
+        try:
+            if student_text:
+                add_conversation(
+                    session_id=session_id,
+                    role="student",
+                    content=student_text,
+                    slide_number=slide_number_int,
+                    timestamp=timestamp,  # FE sends ISO string; DB layer normalizes
+                )
+        except Exception as e:
+            return None, f"Chat failed to log student message: {e}"
 
     # --- AI call with optional PDF context ---
     try:
@@ -73,17 +76,18 @@ def _process_chat_request(
         return None, f"Chat AI generation failed: {e}"
 
     # --- Persist assistant reply ---
-    try:
-        if ai_text:
-            add_conversation(
-                session_id=session_id,
-                role="assistant",
-                content=ai_text,
-                slide_number=slide_number_int,
-                timestamp=None,
-            )
-    except Exception as e:
-        return None, f"Failed to log assistant reply: {e}"
+    if persist:
+        try:
+            if ai_text:
+                add_conversation(
+                    session_id=session_id,
+                    role="assistant",
+                    content=ai_text,
+                    slide_number=slide_number_int,
+                    timestamp=None,
+                )
+        except Exception as e:
+            return None, f"Failed to log assistant reply: {e}"
 
     return {"response": ai_text}, None
 
@@ -97,11 +101,11 @@ def chat_json():
       messages: Array<{role, content}>,
       selectedAssignment?: string,   # filename in assignments/
       slideNumber?: number | string,
-      timestamp?: string
+      timestamp?: string,
+      persist?: boolean
     }
     """
 
-    print("/chat JSON called", request)
     try:
         data = request.get_json(force=True) or {}
         messages = data.get("messages", [])
@@ -109,6 +113,7 @@ def chat_json():
         session_id = data.get("sessionId")
         slide_number = data.get("slideNumber")
         timestamp = data.get("timestamp")
+        persist = request.args.get("persist", "1") in ("1", "true", "True")
 
         payload, error = _process_chat_request(
             messages=messages,
@@ -117,6 +122,7 @@ def chat_json():
             slide_number=slide_number,
             timestamp=timestamp,
             audio_transcription=None,
+            persist=persist,
         )
 
         if error:
@@ -158,18 +164,21 @@ def chat_audio():
         selected_assignment = request.form.get("selectedAssignment")
         slide_number = request.form.get("slideNumber")
         timestamp = request.form.get("timestamp")
+        persist = request.args.get("persist", "0") in ("1", "true", "True")
 
         # Transcribe if audio present
         audio_transcription = None
         audio_file = request.files.get("audio")
 
         if audio_file and audio_file.filename:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                audio_file.save(tmp.name)
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=".webm"
+            ) as temp_audio:
+                audio_file.save(temp_audio.name)
                 try:
-                    audio_transcription = transcribe_audio(tmp.name)
+                    audio_transcription = transcribe_audio(temp_audio.name)
                 finally:
-                    os.unlink(tmp.name)
+                    os.unlink(temp_audio.name)
 
         payload, error = _process_chat_request(
             messages=messages,
@@ -178,6 +187,7 @@ def chat_audio():
             slide_number=slide_number,
             timestamp=timestamp,
             audio_transcription=audio_transcription,
+            persist=persist,
         )
 
         if error:

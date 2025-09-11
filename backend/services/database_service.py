@@ -55,6 +55,7 @@ def get_session_by_id(session_id: str):
 def list_sessions():
     db = get_db()
     rows = db.session.find_many(
+        where={"completedAt": {"not": None}},
         include={
             "student": True,  # brings Student model (or None)
             "feedback": True,  # brings Feedback model (or None)
@@ -62,6 +63,7 @@ def list_sessions():
         order={"createdAt": "desc"},
     )
 
+    # rows = [r for r in rows if r.completedAt]
     trimmed = []
     for r in rows:
         stu = r.student

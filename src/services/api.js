@@ -218,7 +218,7 @@ export async function createChat({
 	slideNumber,
 }) {
 	const timestamp = new Date().toISOString();
-	const r = await fetch(ENDPOINTS.chat.json, {
+	const r = await fetch(ENDPOINTS.chat.json(0), {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
@@ -250,7 +250,7 @@ export async function createChat({
 // TODO: Update to return json;
 export async function createChatWithAudio(formData) {
 	formData.append("timestamp", new Date().toISOString());
-	const r = await fetch(ENDPOINTS.chat.audio, {
+	const r = await fetch(ENDPOINTS.chat.audio(0), {
 		method: "POST",
 		body: formData,
 	});
