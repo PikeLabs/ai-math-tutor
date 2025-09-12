@@ -715,6 +715,17 @@ def generate_feedback(
                 if int(ts.get("slideNumber", 0) or 0) <= int(actual_slide_count)
             ]
 
+        # De-duplicate slide_timestamps_only by slideNumber while preserving order
+        if slide_timestamps_only:
+            _seen = set()
+            _dedup = []
+            for ts in slide_timestamps_only:
+                sn = int(ts.get("slideNumber") or 0)
+                if sn > 0 and sn not in _seen:
+                    _seen.add(sn)
+                    _dedup.append(ts)
+            slide_timestamps_only = _dedup
+
         # Canonical slide order for mapping Q&A
         slide_order: List[int] = []
         if slide_timestamps_only:
@@ -864,16 +875,14 @@ def generate_feedback(
         # --- Build per-slide feedback texts (no global Q&A section) ---
         feedback_parts: List[str] = []
 
-        if slide_timestamps_only and len(slide_timestamps_only) > 1:
-            # Generate feedback for each slide using timestamps order
-            for ts in slide_timestamps_only:
-                slide_num = ts["slideNumber"]
+        # Prefer canonical, de-duplicated slide_order when available
+        if slide_order and len(slide_order) > 1:
+            for slide_num in slide_order:
                 slide_data = slide_audio_transcripts.get(slide_num) or {
                     "transcript": "Audio not available for this slide",
                     "start_time": 0,
                     "end_time": None,
                 }
-
                 try:
                     feedback_part = generate_slide_feedback(
                         slide_num, slide_data, slide_content, conversation_history
@@ -883,11 +892,11 @@ def generate_feedback(
                     feedback_part = f"**Slide {slide_num} Feedback:** Error: {str(e)}"
 
                 feedback_parts.append(feedback_part)
+
         elif slide_audio_transcripts and len(slide_audio_transcripts) > 1:
             # Fallback to whatever slide numbers we have in transcripts
             for slide_num in sorted(slide_audio_transcripts.keys()):
                 slide_data = slide_audio_transcripts[slide_num]
-
                 try:
                     feedback_part = generate_slide_feedback(
                         slide_num, slide_data, slide_content, conversation_history
@@ -895,17 +904,15 @@ def generate_feedback(
                 except Exception as e:
                     print(f"❌ Error generating feedback for slide {slide_num}: {e}")
                     feedback_part = f"**Slide {slide_num} Feedback:** Error: {str(e)}"
-
                 feedback_parts.append(feedback_part)
         else:
             # Single-slide path
-            slide_num = 1
+            slide_num = 1 if not slide_order else slide_order[0]
             slide_data = slide_audio_transcripts.get(slide_num) or {
                 "transcript": "Audio not available",
                 "start_time": 0,
                 "end_time": None,
             }
-
             try:
                 feedback_part = generate_slide_feedback(
                     slide_num, slide_data, slide_content, conversation_history
@@ -913,7 +920,6 @@ def generate_feedback(
             except Exception as e:
                 print(f"❌ Error generating feedback for slide {slide_num}: {e}")
                 feedback_part = f"**Slide {slide_num} Feedback:** Error: {str(e)}"
-
             feedback_parts.append(feedback_part)
 
         # Only per-slide feedbacks
@@ -1054,19 +1060,27 @@ def generate_feedback(
             print(f"⚠️ Late slide-image generation failed: {e}")
 
         # --- Parse & attach per-slide feedback + Q&A ---
-        for i, feedback_text in enumerate(slide_feedback_texts):
-            # Determine slide number aligned to order
-            slide_num = None
+        already_added_slides = set()
 
-            if slide_timestamps_only and i < len(slide_timestamps_only):
+        for i, feedback_text in enumerate(slide_feedback_texts):
+            # Determine slide number aligned to canonical order
+            if slide_order and i < len(slide_order):
+                slide_num = int(slide_order[i])
+            elif slide_timestamps_only and i < len(slide_timestamps_only):
                 slide_num = int(slide_timestamps_only[i]["slideNumber"])
-            elif i < len(slide_order):
-                slide_num = slide_order[i]
             else:
                 slide_num = i + 1  # last resort
 
+            # Respect declared slide count
             if actual_slide_count and slide_num > actual_slide_count:
                 continue
+
+            # Defensive: skip duplicates if any slip through
+            if slide_num in already_added_slides:
+                print(f"⚠️ Skipping duplicate feedback for slide {slide_num}")
+                continue
+
+            already_added_slides.add(slide_num)
 
             parsed_feedback = parse_slide_feedback(feedback_text)
 
