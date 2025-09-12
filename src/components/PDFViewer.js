@@ -152,9 +152,6 @@ function RecordingBar({
 
 		countdownTimerContent = (
 			<div className="flex items-center justify-center gap-3">
-				<div className="px-3 py-1 rounded bg-amber-100 text-amber-800 font-semibold">
-					Time left: {timeLeft}
-				</div>
 				<Button
 					onClick={handleOnContinue}
 					className="h-auto"
@@ -162,6 +159,9 @@ function RecordingBar({
 				>
 					Continue
 				</Button>
+				<div className="px-3 py-1 rounded bg-amber-100 text-amber-800 font-semibold">
+					Time left: {timeLeft}
+				</div>
 			</div>
 		);
 	}

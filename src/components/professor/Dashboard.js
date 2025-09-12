@@ -66,7 +66,7 @@ export default function Dashboard() {
 	};
 
 	const handleSearch = (e) => {
-		const value = e.target.value;
+		const value = e.target.value.trim();
 		setQuery(value);
 		setPage(1); // reset to first page on search change
 	};
@@ -148,6 +148,7 @@ export default function Dashboard() {
 					type="search"
 					value={query}
 					onChange={handleSearch}
+					maxLength={100}
 					placeholder="Search by Student Name…"
 					className="w-full max-w-xs"
 					aria-label="Search by Student Name"

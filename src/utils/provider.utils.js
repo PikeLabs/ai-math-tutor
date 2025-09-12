@@ -1,7 +1,8 @@
 export const buildFollowUpContext = (currentSlideRange) => {
-	const { start, end } = currentSlideRange || {};
-	const rangeText = start === end ? `slide ${start}` : `slides ${start}-${end}`;
-	return `Based on my previous answer, ask me one final follow-up question about ${rangeText}. This is the final question.`;
+	// const { start, end } = currentSlideRange || {};
+	// const rangeText = start === end ? `slide ${start}` : `slides ${start}-${end}`;
+	// 	return `Based on my previous answer, ask me one final follow-up question about ${rangeText}. This is the final question.`;
+	return "Ask me one final, high-leverage follow-up question about the overall pitch (not tied to any specific slide). Keep it concise. This is the final question.";
 };
 
 export const buildEnhancedContext = (

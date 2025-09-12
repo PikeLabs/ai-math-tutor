@@ -8,6 +8,9 @@ import { Button } from "../ui/button";
 import { useSession } from "../../hooks/useSession";
 import { createSession } from "../../services/api";
 
+const MAX_LENGTH = 50;
+const MIN_LENGTH = 2;
+
 export default function StudentNameInput() {
 	const [name, setName] = useState("");
 	const [err, setErr] = useState("");
@@ -18,8 +21,13 @@ export default function StudentNameInput() {
 
 	const onSubmit = async (e) => {
 		e.preventDefault();
-		if (name.trim().length < 2) {
-			setErr("Name must be at least 2 characters long");
+		if (name.trim().length < MIN_LENGTH) {
+			setErr(`Name must be at least ${MIN_LENGTH} characters long`);
+			return;
+		}
+
+		if (name.trim().length >= MAX_LENGTH) {
+			setErr(`Name must be at most ${MAX_LENGTH} characters long`);
 			return;
 		}
 
@@ -60,7 +68,7 @@ export default function StudentNameInput() {
 
 	const handleBack = () => navigate("/");
 
-	const disabled = submitting || name.trim().length < 2;
+	const disabled = submitting || name.trim().length < MIN_LENGTH;
 	const buttonText = submitting ? "Creating…" : "Continue";
 
 	return (
@@ -88,6 +96,7 @@ export default function StudentNameInput() {
 						autoFocus
 						autoComplete="name"
 						required
+						maxLength={MAX_LENGTH}
 						aria-invalid={Boolean(err)}
 						aria-describedby={err ? "student-name-error" : undefined}
 						className="placeholder:text-muted-foreground/60"
