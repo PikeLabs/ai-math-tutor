@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 
 import {
 	Dialog,
@@ -9,6 +10,7 @@ import {
 } from "../ui/dialog";
 import { Separator } from "../ui/separator";
 import SlideImage from "./SlideImage";
+import { cn } from "../../lib/utils";
 
 function SlideModal({ imageUrl, slideNumber, isOpen, onClose }) {
 	const [imageError, setImageError] = useState(false);
@@ -41,6 +43,11 @@ function SlideModal({ imageUrl, slideNumber, isOpen, onClose }) {
 				aria-labelledby="slide-full-title"
 				className="sm:max-w-[90vw] md:max-w-[80vw] rounded-2xl p-0"
 			>
+				{/* Extra hidden title ensures no timing issues during mount/HMR */}
+				<DialogTitle asChild>
+					<VisuallyHidden>Recording prompt</VisuallyHidden>
+				</DialogTitle>
+
 				<DialogHeader className="px-6 pt-6">
 					<DialogTitle
 						id="slide-full-title"
@@ -75,11 +82,11 @@ function SlideModal({ imageUrl, slideNumber, isOpen, onClose }) {
 							<SlideImage
 								src={imageUrl}
 								alt={`Slide ${slideNumber} - Full Size`}
-								className={[
-									"max-h-[70vh] max-w-full",
-									"rounded-md border border-border shadow-sm",
-									isLoading ? "hidden" : "block",
-								].join(" ")}
+								className={cn(
+									"max-h-[70vh] max-w-full object-contain",
+									"rounded-md border border-border shadow-sm transition-opacity duration-200",
+									isLoading ? "opacity-0 pointer-events-none" : "opacity-100"
+								)}
 								onLoad={handleImageLoad}
 								onError={handleImageError}
 							/>
