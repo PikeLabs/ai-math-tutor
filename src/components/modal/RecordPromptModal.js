@@ -1,4 +1,6 @@
 import React from "react";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { Upload } from "lucide-react";
 
 import {
 	Dialog,
@@ -8,6 +10,15 @@ import {
 	DialogDescription,
 } from "../ui/dialog";
 import { Button } from "../ui/button";
+import { RecordingIcon } from "../ui/RecordingIcon";
+import { cn } from "../../lib/utils";
+
+const modalBtn =
+	"h-auto px-6 py-3 text-base font-semibold " +
+	"shadow-none hover:shadow-none " +
+	"transition-all duration-150 will-change-transform " +
+	"hover:-translate-y-0.5 active:translate-y-0 " +
+	"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
 export default function RecordPromptModal({
 	open,
@@ -30,10 +41,14 @@ export default function RecordPromptModal({
 				// Block ESC and outside clicks from closing the dialog
 				onEscapeKeyDown={handleBlockEscapes}
 				onPointerDownOutside={handleBlockEscapes}
-				aria-labelledby="record-start-title"
-				className="sm:max-w-[32rem] rounded-2xl"
+				className="sm:max-w-[32rem] rounded-2xl border-none shadow-xl"
 				hideClose={true}
 			>
+				{/* Extra hidden title ensures no timing issues during mount/HMR */}
+				<DialogTitle asChild>
+					<VisuallyHidden>Recording prompt</VisuallyHidden>
+				</DialogTitle>
+
 				<DialogHeader>
 					<DialogTitle
 						id="record-start-title"
@@ -51,21 +66,23 @@ export default function RecordPromptModal({
 					different file.
 				</p>
 
-				<div className="flex items-center justify-center gap-3">
+				<div className="flex items-center justify-center gap-2.5 md:gap-3">
 					<Button
 						type="button"
 						onClick={onStart}
 						variant="destructive"
-						className="h-auto px-6 py-3"
+						className={cn("border-0", modalBtn)}
 					>
+						<RecordingIcon className="mr-2 h-4 w-4" />
 						Start recording
 					</Button>
 					<Button
 						type="button"
 						onClick={onUploadDifferent}
-						variant="outline"
-						className="h-auto px-6 py-3"
+						variant="secondary"
+						className={modalBtn}
 					>
+						<Upload className="mr-2 h-4 w-4" />
 						Upload different file
 					</Button>
 				</div>

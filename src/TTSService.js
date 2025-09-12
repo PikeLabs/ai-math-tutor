@@ -1,174 +1,175 @@
 class TTSService {
-  constructor() {
-    this.currentAudio = null;
-    this.apiKey = process.env.REACT_APP_ELEVENLABS_API_KEY || 'your-api-key-here';
-    this.voiceId = process.env.REACT_APP_ELEVENLABS_VOICE_ID || 'b49kxxWbYzfNv7AZOp3g';
-    this.baseUrl = 'https://api.elevenlabs.io/v1';
-    this.isLoading = false;
-    this.isSpeaking = false;
-    this.listeners = new Set();
-    
-    // Recording capabilities
-    this.recordingData = null;
-  }
+	constructor() {
+		this.currentAudio = null;
+		this.apiKey =
+			process.env.REACT_APP_ELEVENLABS_API_KEY || "your-api-key-here";
+		this.voiceId =
+			process.env.REACT_APP_ELEVENLABS_VOICE_ID || "b49kxxWbYzfNv7AZOp3g";
+		this.baseUrl = "https://api.elevenlabs.io/v1";
+		this.isLoading = false;
+		this.isSpeaking = false;
+		this.listeners = new Set();
 
-  // Method to set recording data from App component
-  setRecordingData(audioBlob) {
-    this.recordingData = audioBlob;
-  }
+		// Recording capabilities
+		this.recordingData = null;
+	}
 
-  // Method to get recording data
-  getRecordingData() {
-    return this.recordingData;
-  }
+	// Method to set recording data from App component
+	setRecordingData(audioBlob) {
+		this.recordingData = audioBlob;
+	}
 
-  // Method to clear recording data
-  clearRecordingData() {
-    this.recordingData = null;
-  }
+	// Method to get recording data
+	getRecordingData() {
+		return this.recordingData;
+	}
 
-  async speak(text) {
-    try {
-      // Stop any currently playing audio
-      this.stop();
+	// Method to clear recording data
+	clearRecordingData() {
+		this.recordingData = null;
+	}
 
-      // Clean text for TTS (remove markdown and math notation)
-      const cleanText = this.cleanTextForTTS(text);
-      
-      if (!cleanText.trim()) {
-        return;
-      }
+	async speak(text) {
+		try {
+			// Stop any currently playing audio
+			this.stop();
 
-      // Set loading state
-      console.log('TTS: Setting loading state to true');
-      this.isLoading = true;
-      this.isSpeaking = false;
-      this.notifyListeners();
+			// Clean text for TTS (remove markdown and math notation)
+			const cleanText = this.cleanTextForTTS(text);
 
-      const response = await fetch(`${this.baseUrl}/text-to-speech/${this.voiceId}`, {
-        method: 'POST',
-        headers: {
-          'Accept': 'audio/mpeg',
-          'Content-Type': 'application/json',
-          'xi-api-key': this.apiKey
-        },
-        body: JSON.stringify({
-          text: cleanText,
-          model_id: 'eleven_monolingual_v1',
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.5
-          }
-        })
-      });
+			if (!cleanText.trim()) {
+				return;
+			}
 
-      if (!response.ok) {
-        throw new Error(`ElevenLabs API error: ${response.status}`);
-      }
+			// Set loading state
+			this.isLoading = true;
+			this.isSpeaking = false;
+			this.notifyListeners();
 
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      
-      this.currentAudio = new Audio(audioUrl);
-      
-      // Set up event listeners
-      this.currentAudio.addEventListener('canplay', () => {
-        console.log('TTS: Audio can play, switching to speaking state');
-        this.isLoading = false;
-        this.isSpeaking = true;
-        this.notifyListeners();
-      });
+			const response = await fetch(
+				`${this.baseUrl}/text-to-speech/${this.voiceId}`,
+				{
+					method: "POST",
+					headers: {
+						Accept: "audio/mpeg",
+						"Content-Type": "application/json",
+						"xi-api-key": this.apiKey,
+					},
+					body: JSON.stringify({
+						text: cleanText,
+						model_id: "eleven_monolingual_v1",
+						voice_settings: {
+							stability: 0.5,
+							similarity_boost: 0.5,
+						},
+					}),
+				}
+			);
 
-      this.currentAudio.addEventListener('play', () => {
-        console.log('TTS: Audio started playing');
-        this.isLoading = false;
-        this.isSpeaking = true;
-        this.notifyListeners();
-      });
+			if (!response.ok) {
+				throw new Error(`ElevenLabs API error: ${response.status}`);
+			}
 
-      this.currentAudio.addEventListener('ended', () => {
-        console.log('TTS: Audio ended');
-        URL.revokeObjectURL(audioUrl);
-        this.currentAudio = null;
-        this.isSpeaking = false;
-        this.notifyListeners();
-      });
+			const audioBlob = await response.blob();
+			const audioUrl = URL.createObjectURL(audioBlob);
 
-      this.currentAudio.addEventListener('error', (e) => {
-        console.error('Audio playback error:', e);
-        URL.revokeObjectURL(audioUrl);
-        this.currentAudio = null;
-        this.isLoading = false;
-        this.isSpeaking = false;
-        this.notifyListeners();
-      });
+			this.currentAudio = new Audio(audioUrl);
 
-      console.log('TTS: Starting audio playback');
-      // Auto-play the audio
-      await this.currentAudio.play();
-      
-    } catch (error) {
-      console.error('TTS Error:', error);
-      this.isLoading = false;
-      this.isSpeaking = false;
-      this.notifyListeners();
-    }
-  }
+			// Set up event listeners
+			this.currentAudio.addEventListener("canplay", () => {
+				this.isLoading = false;
+				this.isSpeaking = true;
+				this.notifyListeners();
+			});
 
-  stop() {
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-      this.currentAudio.currentTime = 0;
-      this.currentAudio = null;
-    }
-    this.isLoading = false;
-    this.isSpeaking = false;
-    this.notifyListeners();
-  }
+			this.currentAudio.addEventListener("play", () => {
+				this.isLoading = false;
+				this.isSpeaking = true;
+				this.notifyListeners();
+			});
 
-  // Event listener management
-  addListener(callback) {
-    this.listeners.add(callback);
-  }
+			this.currentAudio.addEventListener("ended", () => {
+				URL.revokeObjectURL(audioUrl);
+				this.currentAudio = null;
+				this.isSpeaking = false;
+				this.notifyListeners();
+			});
 
-  removeListener(callback) {
-    this.listeners.delete(callback);
-  }
+			this.currentAudio.addEventListener("error", (e) => {
+				console.error("Audio playback error:", e);
+				URL.revokeObjectURL(audioUrl);
+				this.currentAudio = null;
+				this.isLoading = false;
+				this.isSpeaking = false;
+				this.notifyListeners();
+			});
 
-  notifyListeners() {
-    this.listeners.forEach(callback => {
-      callback({
-        isLoading: this.isLoading,
-        isSpeaking: this.isSpeaking
-      });
-    });
-  }
+			// Auto-play the audio
+			await this.currentAudio.play();
+		} catch (error) {
+			console.error("TTS Error:", error);
+			this.isLoading = false;
+			this.isSpeaking = false;
+			this.notifyListeners();
+		}
+	}
 
-  // Getter methods for current state
-  getIsLoading() {
-    return this.isLoading;
-  }
+	stop() {
+		if (this.currentAudio) {
+			this.currentAudio.pause();
+			this.currentAudio.currentTime = 0;
+			this.currentAudio = null;
+		}
+		this.isLoading = false;
+		this.isSpeaking = false;
+		this.notifyListeners();
+	}
 
-  getIsSpeaking() {
-    return this.isSpeaking;
-  }
+	// Event listener management
+	addListener(callback) {
+		this.listeners.add(callback);
+	}
 
-  cleanTextForTTS(text) {
-    return text
-      // Remove LaTeX math expressions
-      .replace(/\$\$[\s\S]*?\$\$/g, ' math expression ')
-      .replace(/\$[^$]*?\$/g, ' math ')
-      // Remove markdown formatting
-      .replace(/\*\*(.*?)\*\*/g, '$1')
-      .replace(/\*(.*?)\*/g, '$1')
-      .replace(/`(.*?)`/g, '$1')
-      .replace(/#{1,6}\s+(.*)/g, '$1')
-      // Remove code blocks
-      .replace(/```[\s\S]*?```/g, ' code block ')
-      // Clean up multiple spaces and newlines
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
+	removeListener(callback) {
+		this.listeners.delete(callback);
+	}
+
+	notifyListeners() {
+		this.listeners.forEach((callback) => {
+			callback({
+				isLoading: this.isLoading,
+				isSpeaking: this.isSpeaking,
+			});
+		});
+	}
+
+	// Getter methods for current state
+	getIsLoading() {
+		return this.isLoading;
+	}
+
+	getIsSpeaking() {
+		return this.isSpeaking;
+	}
+
+	cleanTextForTTS(text) {
+		return (
+			text
+				// Remove LaTeX math expressions
+				.replace(/\$\$[\s\S]*?\$\$/g, " math expression ")
+				.replace(/\$[^$]*?\$/g, " math ")
+				// Remove markdown formatting
+				.replace(/\*\*(.*?)\*\*/g, "$1")
+				.replace(/\*(.*?)\*/g, "$1")
+				.replace(/`(.*?)`/g, "$1")
+				.replace(/#{1,6}\s+(.*)/g, "$1")
+				// Remove code blocks
+				.replace(/```[\s\S]*?```/g, " code block ")
+				// Clean up multiple spaces and newlines
+				.replace(/\s+/g, " ")
+				.trim()
+		);
+	}
 }
 
 export default new TTSService();

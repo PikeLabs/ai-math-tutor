@@ -2,75 +2,113 @@ import { useState } from "react";
 
 import SlideModal from "./SlideModal";
 import SlideImage from "./SlideImage";
-import { ColumnHeader } from "../ui/Tables";
-import { resolveUrl } from "../../utils";
-import { Card, CardContent } from "../ui/card";
+import {
+	resolveUrl,
+	parseTranscriptText,
+	buildStructuredTranscript,
+} from "../../utils";
+
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Badge } from "../ui/badge";
+
+function getSlideKey(slide) {
+	const parts = [
+		"slide",
+		slide?.slide_number,
+		// include URLs if present to disambiguate duplicate slide_number entries
+		slide?.image_url_full || slide?.image_url || "",
+		slide?.audio_url || "",
+	];
+	// Use ":" so it's obvious and stable
+	return parts.filter(Boolean).join(":");
+}
+
+const keys = [
+	"content_structuring",
+	"delivery",
+	"impromptu_response",
+	"composure",
+];
 
 function OverallBadge({ feedback }) {
 	if (!feedback) return null;
-	const keys = [
-		"content_structuring",
-		"delivery",
-		"impromptu_response",
-		"composure",
-	];
+
 	let met = 0,
 		considered = 0;
-	keys.forEach((k) => {
+
+	for (const k of keys) {
 		const s = feedback?.[k]?.status;
-		if (!s || s === "not_applicable") return;
+		if (!s || s === "not_applicable") continue;
 		considered += 1;
 		if (s === "met") met += 1;
-	});
+	}
+
 	const text = considered ? `${met}/${considered} met` : "No score";
-	const color =
-		considered === 0
-			? "bg-gray-200 text-gray-700"
-			: met / (considered || 1) >= 0.5
-			? "bg-emerald-100 text-emerald-700"
-			: "bg-red-100 text-red-700";
+	const solidPass = considered > 0 && met / considered >= 0.5;
+
+	// Use badge variants for simple “traffic light” feel
+	const variant = !considered
+		? "secondary"
+		: solidPass
+		? "default"
+		: "destructive";
+
 	return (
-		<span
-			className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${color}`}
+		<Badge
+			variant={variant}
+			className="font-semibold"
 		>
 			Overall: {text}
-		</span>
+		</Badge>
 	);
 }
 
-function TranscriptPanel({ text }) {
-	if (!text || !text.trim()) {
+function TranscriptPanel({ text, structured }) {
+	// Accept either raw text or pre-built structure
+	const data = structured || parseTranscriptText(text);
+
+	if (!data.ordered.length) {
 		return (
-			<div className="w-full h-40 rounded border-2 border-dashed border-border flex items-center justify-center text-xs text-muted-foreground">
+			<div className="w-full rounded-md border border-dashed border-border p-4 text-xs text-muted-foreground">
 				Conversation transcript not available
 			</div>
 		);
 	}
+
 	return (
-		<div className="max-h-64 overflow-auto rounded-md border border-border bg-card p-3 text-sm leading-relaxed text-foreground/80 whitespace-pre-wrap">
-			{text}
+		<div className="rounded-md border border-border bg-card p-3 md:p-4">
+			<div className="space-y-4">
+				{data.ordered.map(({ speaker, paragraphs }, idx) => (
+					<div
+						key={idx}
+						className="rounded-lg border border-border bg-muted/30 p-3"
+					>
+						<div className="text-sm leading-relaxed text-foreground">
+							<span className="font-semibold">
+								{speaker}
+								<span className="opacity-60">:</span>{" "}
+							</span>
+							<span className="align-baseline text-foreground/80">
+								{paragraphs[0] || ""}
+							</span>
+						</div>
+
+						{paragraphs.slice(1).map((para, i) => (
+							<p
+								key={i}
+								className="mt-2 text-sm leading-relaxed text-foreground/80"
+							>
+								{para}
+							</p>
+						))}
+					</div>
+				))}
+			</div>
 		</div>
 	);
 }
 
-function buildFallbackTranscript(feedback) {
-	// Prefer combined VC/Student text if present
-	const dialogue = feedback?.transcripts?.dialogue_text;
-	if (dialogue && dialogue.trim()) return dialogue;
-
-	// Else fall back to concatenated QA audio transcripts
-	const qa = feedback?.qa_audio || feedback?.transcripts?.qa_responses || [];
-	const lines = (qa || [])
-		.map((seg, i) =>
-			(seg?.transcript || "").trim()
-				? `Answer ${i + 1}: ${seg.transcript.trim()}`
-				: ""
-		)
-		.filter(Boolean);
-	return lines.join("\n\n");
-}
-
-function SlideSection({ slide, fallbackTranscript, onImageClick }) {
+function SlideSection({ slide, structuredFallback, onImageClick }) {
 	const {
 		slide_number,
 		image_url,
@@ -81,7 +119,9 @@ function SlideSection({ slide, fallbackTranscript, onImageClick }) {
 	} = slide || {};
 
 	const imageColumnText = `Slide ${slide_number}`;
-	const transcriptText = qa_transcript || fallbackTranscript;
+	const structuredTranscript = qa_transcript
+		? parseTranscriptText(qa_transcript)
+		: structuredFallback;
 
 	const handleImageClick = () => {
 		if (image_url_full) {
@@ -111,34 +151,45 @@ function SlideSection({ slide, fallbackTranscript, onImageClick }) {
 			</div>
 
 			{/* Two-column layout */}
-			<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-				{/* Left: Image */}
-				<div>
-					<ColumnHeader title="Slide Image" />
-					<div className="mt-2">
-						<ImageContainer
-							image_url={image_url}
-							alt={imageColumnText}
-							onClick={handleImageClick}
-							slide_number={slide_number}
-						/>
-					</div>
+			<div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+				{/* Left (col 1): Image + Feedback */}
+				<div className="md:col-span-2 space-y-4">
+					<Card>
+						<CardHeader className="pb-2">
+							<CardTitle className="text-sm">Slide Image</CardTitle>
+						</CardHeader>
+						<CardContent className="pt-0">
+							<ImageContainer
+								image_url={image_url}
+								alt={imageColumnText}
+								onClick={handleImageClick}
+								slide_number={slide_number}
+							/>
+						</CardContent>
+					</Card>
+
+					<Card>
+						<CardHeader className="pb-2">
+							<CardTitle className="text-sm">Feedback</CardTitle>
+						</CardHeader>
+						<CardContent className="pt-0">
+							<FeedbackContainer feedback={feedback} />
+						</CardContent>
+					</Card>
 				</div>
 
-				{/* Right: Transcript */}
-				<div>
-					<ColumnHeader title="Conversation (Q&A) Transcript" />
-					<div className="mt-2">
-						<TranscriptPanel text={transcriptText} />
-					</div>
-				</div>
-			</div>
-
-			{/* Feedback block */}
-			<div className="mt-4">
-				<ColumnHeader title="Feedback" />
-				<div className="mt-2">
-					<FeedbackContainer feedback={feedback} />
+				{/* Right (col 2): Transcript — intentionally wider (spans 3) */}
+				<div className="md:col-span-3">
+					<Card className="h-full">
+						<CardHeader className="pb-2">
+							<CardTitle className="text-sm">
+								Conversation (Q&amp;A) Transcript
+							</CardTitle>
+						</CardHeader>
+						<CardContent className="pt-0">
+							<TranscriptPanel structured={structuredTranscript} />
+						</CardContent>
+					</Card>
 				</div>
 			</div>
 		</section>
@@ -151,6 +202,7 @@ const statusIconMap = {
 	not_applicable: "N/A",
 	unknown: "?",
 };
+
 const statusClassMap = {
 	met: "text-emerald-600",
 	not_met: "text-red-600",
@@ -167,10 +219,15 @@ function FeedbackItem({ item, label }) {
 	const feedbackComment = comment || "No feedback available";
 
 	return (
-		<div className="mb-1.5 rounded-md border border-border bg-card p-2">
-			<strong className="text-slate-800">{label}: </strong>
-			<span className={`font-bold ${statusColorClass}`}>{statusIcon}</span>
-			<div className="mt-2 text-sm leading-relaxed text-foreground/80">
+		<div className="mb-2 rounded-md border border-border bg-card/50 p-3">
+			<div className="text-sm font-medium font-bold text-foreground">
+				{label}:{" "}
+				<span className={`ml-1 font-bold ${statusColorClass}`}>
+					{statusIcon}
+				</span>
+			</div>
+
+			<div className="mt-1.5 text-sm leading-relaxed text-foreground/80">
 				{feedbackComment}
 			</div>
 		</div>
@@ -226,6 +283,7 @@ function AudioContainer({ audio_url }) {
 				<source src={audioSrc} />
 				Your browser does not support the audio element.
 			</audio>
+
 			<div className="mt-1 text-[11px] text-muted-foreground">
 				Audio for this slide
 			</div>
@@ -327,22 +385,18 @@ function QAFeedback({ qa }) {
 			</h3>
 
 			<div className="flex flex-col gap-4 md:flex-row">
-				<div className="flex-1 min-w-[280px] p-4 bg-white rounded border border-gray-200">
-					<div className="min-w-[280px] flex-1 rounded border border-border bg-card p-4">
-						<span>Impromptu Response:</span>
-						{impromptuResponseIcon}
+				<div className="flex-1 min-w-[280px] rounded-md border border-border bg-card p-4">
+					<div className="text-sm font-medium">
+						Impromptu Response: {impromptuResponseIcon}
 					</div>
-					<div className="text-sm leading-relaxed text-foreground/80">
+					<div className="mt-1.5 text-sm leading-relaxed text-foreground/80">
 						{impromptuResponseComment}
 					</div>
 				</div>
 
-				<div className="flex-1 min-w-[280px] p-4 bg-white rounded border border-gray-200">
-					<div className="min-w-[280px] flex-1 rounded border border-border bg-card p-4">
-						<span>Composure:</span>
-						{composureIcon}
-					</div>
-					<div className="text-sm leading-relaxed text-foreground/80">
+				<div className="flex-1 min-w-[280px] rounded-md border border-border bg-card p-4">
+					<div className="text-sm font-medium">Composure: {composureIcon}</div>
+					<div className="mt-1.5 text-sm leading-relaxed text-foreground/80">
 						{composureComment}
 					</div>
 				</div>
@@ -408,6 +462,21 @@ export default function FeedbackReport({ feedback }) {
 	const hasSlides = slides.length > 0;
 	const hasAudio = !!feedback?.metadata?.has_audio;
 	const hasConversation = !!feedback?.metadata?.has_conversation;
+	const structuredFallback = buildStructuredTranscript(feedback);
+	const seen = new Map();
+	for (const s of slides) {
+		const n = s?.slide_number;
+		if (typeof n === "number") {
+			seen.set(n, (seen.get(n) || 0) + 1);
+		}
+	}
+	const dupes = [...seen.entries()]
+		.filter(([, count]) => count > 1)
+		.map(([n]) => n);
+	if (dupes.length) {
+		// eslint-disable-next-line no-console
+		console.warn("Feedback payload contains duplicate slide_number(s):", dupes);
+	}
 
 	return (
 		<Card className="overflow-hidden">
@@ -424,9 +493,9 @@ export default function FeedbackReport({ feedback }) {
 				<div>
 					{slides.map((slide) => (
 						<SlideSection
-							key={slide.slide_number}
+							key={getSlideKey(slide)}
 							slide={slide}
-							fallbackTranscript={buildFallbackTranscript(feedback)}
+							structuredFallback={structuredFallback}
 							onImageClick={handleImageClick}
 						/>
 					))}
@@ -441,12 +510,10 @@ export default function FeedbackReport({ feedback }) {
 
 			<QAFeedback qa={feedback.qa_feedback} />
 
-			<Card className="m-5">
-				<CardContent className="p-5 text-center text-sm text-muted-foreground">
-					This feedback was generated based on your pitch presentation and Q&A
-					conversation.
-				</CardContent>
-			</Card>
+			<div className="m-5 pt-5 text-center text-xs text-muted-foreground">
+				This feedback was generated based on your pitch presentation and Q&A
+				conversation.
+			</div>
 
 			<SlideModal
 				imageUrl={modalImage}

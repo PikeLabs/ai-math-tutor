@@ -1,4 +1,6 @@
 import React from "react";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+
 import {
 	Dialog,
 	DialogContent,
@@ -10,6 +12,13 @@ import {
 } from "../ui/dialog";
 import { Button } from "../ui/button";
 
+const modalBtn =
+	"h-auto px-6 py-3 text-base font-semibold " +
+	"shadow-none hover:shadow-none " +
+	"transition-all duration-150 will-change-transform " +
+	"hover:-translate-y-0.5 active:translate-y-0 " +
+	"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
+
 export default function InstructionsModal({ open, onClose }) {
 	const handleClose = (isOpen) => {
 		if (!isOpen) onClose?.();
@@ -20,10 +29,12 @@ export default function InstructionsModal({ open, onClose }) {
 			open={open}
 			onOpenChange={handleClose}
 		>
-			<DialogContent
-				aria-labelledby="instructions-title"
-				className="sm:max-w-[32rem] rounded-2xl"
-			>
+			<DialogContent className="sm:max-w-[32rem] rounded-2xl">
+				{/* Extra hidden title ensures no timing issues during mount/HMR */}
+				<DialogTitle asChild>
+					<VisuallyHidden>Recording prompt</VisuallyHidden>
+				</DialogTitle>
+
 				<DialogHeader>
 					<DialogTitle
 						id="instructions-title"
@@ -54,7 +65,8 @@ export default function InstructionsModal({ open, onClose }) {
 					<DialogClose asChild>
 						<Button
 							type="button"
-							className="h-auto"
+							variant="outline"
+							className={modalBtn}
 						>
 							Got it
 						</Button>

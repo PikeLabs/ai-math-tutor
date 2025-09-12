@@ -7,6 +7,8 @@ import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { useAuth } from "../../hooks/useAuth";
 
+const MAX_LENGTH = 50;
+
 export default function Login() {
 	const [password, setPassword] = useState("");
 	const [err, setErr] = useState("");
@@ -19,6 +21,10 @@ export default function Login() {
 	const onSubmit = async (e) => {
 		e.preventDefault();
 		if (!password.trim().length) return;
+		if (password.trim().length > MAX_LENGTH) {
+			setErr(`Password must be at most ${MAX_LENGTH} characters long`);
+			return;
+		}
 
 		setErr("");
 		setSubmitting(true);
@@ -78,6 +84,7 @@ export default function Login() {
 						autoFocus
 						autoComplete="current-password"
 						required
+						maxLength={MAX_LENGTH}
 						type="password"
 						aria-label="Professor password"
 						aria-invalid={Boolean(err)}

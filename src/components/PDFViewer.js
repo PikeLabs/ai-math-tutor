@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { ZoomIn as ZoomInIcon, ZoomOut as ZoomOutIcon } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -43,13 +44,19 @@ function RecordingBar({
 	}, [onContinue]);
 
 	useEffect(() => {
-		if (inQA && answerActive) {
+		if (inQA && answerActive && isRecording && !isPaused) {
+			// (Re)start timer
 			if (answerTimerRef.current) {
 				clearInterval(answerTimerRef.current);
 				answerTimerRef.current = null;
 			}
+			// If this is a fresh open (no time set yet), initialize from default.
 			hasFiredEndRef.current = false;
-			setAnswerSecondsLeft(answerSecondsDefault || 30);
+
+			const answerSecondsLeft = answerSecondsDefault || 30;
+			setAnswerSecondsLeft((prev) =>
+				prev <= 0 || prev > answerSecondsLeft ? answerSecondsLeft : prev
+			);
 
 			answerTimerRef.current = setInterval(() => {
 				setAnswerSecondsLeft((prev) => {
@@ -60,25 +67,34 @@ function RecordingBar({
 							hasFiredEndRef.current = true;
 							onContinueRef.current?.("timeout");
 						}
+
 						return 0;
 					}
+
 					return prev - 1;
 				});
 			}, 1000);
 		} else {
+			// Stop ticking if any gating condition is false.
 			if (answerTimerRef.current) {
 				clearInterval(answerTimerRef.current);
 				answerTimerRef.current = null;
 			}
-			setAnswerSecondsLeft(0);
+
+			// Only zero-out when we are NOT in an answer window anymore.
+			if (!(inQA && answerActive)) {
+				setAnswerSecondsLeft(0);
+			}
+			// If we *are* in an answer window but paused/not recording,
+			// keep the current remaining seconds (i.e., effectively pause the countdown).
+			return () => {
+				if (answerTimerRef.current) {
+					clearInterval(answerTimerRef.current);
+					answerTimerRef.current = null;
+				}
+			};
 		}
-		return () => {
-			if (answerTimerRef.current) {
-				clearInterval(answerTimerRef.current);
-				answerTimerRef.current = null;
-			}
-		};
-	}, [inQA, answerActive, answerSecondsDefault]);
+	}, [inQA, answerActive, answerSecondsDefault, isRecording, isPaused]);
 
 	if (!uploadedFile || !isActive || isFinished) return null;
 
@@ -86,15 +102,17 @@ function RecordingBar({
 	let statusRow = null;
 	let formattedTime =
 		isPaused || isRecording ? formatTime(recordingTime) : null;
+	// During Q&A but BEFORE the answer window opens, force a paused look to avoid a brief "recording" flash.
+	const showPauseStatus = (inQA && !answerActive) || isPaused;
 
 	// Paused status
-	if (isPaused) {
+	if (showPauseStatus) {
 		statusRow = (
 			<>
 				<div className="md:text-base font-medium">Recording Paused</div>
 				<PausedIcon
-					className="text-muted-foreground"
-					size={20}
+					className="ml-3 text-muted-foreground"
+					size={25}
 				/>
 				<span className="ml-3 text-sm md:text-base font-medium text-muted-foreground">
 					{formattedTime}
@@ -118,6 +136,7 @@ function RecordingBar({
 	let countdownTimerContent = null;
 	if (inQA && answerActive && isRecording && !isPaused) {
 		const timeLeft = formatTime(answerSecondsLeft);
+
 		const handleOnContinue = () => {
 			// one-shot: cancel timer and fire once
 			if (answerTimerRef.current) {
@@ -133,9 +152,6 @@ function RecordingBar({
 
 		countdownTimerContent = (
 			<div className="flex items-center justify-center gap-3">
-				<div className="px-3 py-1 rounded bg-amber-100 text-amber-800 font-semibold">
-					Time left: {timeLeft}
-				</div>
 				<Button
 					onClick={handleOnContinue}
 					className="h-auto"
@@ -143,6 +159,9 @@ function RecordingBar({
 				>
 					Continue
 				</Button>
+				<div className="px-3 py-1 rounded bg-amber-100 text-amber-800 font-semibold">
+					Time left: {timeLeft}
+				</div>
 			</div>
 		);
 	}
@@ -176,13 +195,19 @@ function AdvanceSlideButton({
 		: isReviewingPast
 		? "Forward"
 		: "Next";
+
+	const visualVariant = disableButton ? "outline" : "default";
 	const onClickHandler = isLastPage ? handleFinishButton : handleNextPage;
 
 	return (
 		<Button
-			className="h-auto"
+			size="sm"
 			disabled={disableButton}
 			onClick={onClickHandler}
+			variant={visualVariant}
+			aria-disabled={disableButton}
+			tabIndex={disableButton ? -1 : 0}
+			className="whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
 		>
 			{buttonText}
 		</Button>
@@ -237,7 +262,6 @@ export default function PDFViewer() {
 	const isInterventionComplete =
 		interventionState === INTERVENTION_STATES.batch_complete || isFinalComplete;
 	const isActive = interventionState !== INTERVENTION_STATES.inactive;
-	console.log("interventionState:", interventionState);
 
 	// When the student is viewing a slide before the furthest they've actually presented,
 	// we are in "catch-up" review mode.
@@ -515,18 +539,23 @@ export default function PDFViewer() {
 				</div>
 
 				{uploadedFile && (
-					<div className="flex flex-wrap items-center justify-between gap-5">
-						<div className="flex items-center gap-3">
+					<div className="flex items-center gap-3 md:gap-5 flex-nowrap min-w-0">
+						{/* Left group (grows) */}
+						<div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
 							<Button
 								onClick={handlePreviousPage}
 								disabled={pageNumber <= 1 || isFinalComplete}
-								className="h-auto"
+								variant="outline"
+								size="sm"
+								className="whitespace-nowrap"
 							>
 								Previous
 							</Button>
-							<span className="text-sm text-muted-foreground font-medium">
+
+							<span className="text-sm text-muted-foreground font-medium whitespace-nowrap">
 								Page {pageNumber} of {numPages || "?"}
 							</span>
+
 							<AdvanceSlideButton
 								pageNumber={pageNumber}
 								numPages={numPages}
@@ -539,7 +568,7 @@ export default function PDFViewer() {
 							/>
 
 							{/* Lock indicator and control */}
-							<div className="flex items-center gap-2 ml-3 pl-3 border-l border-border">
+							<div className="flex items-center gap-2 ml-3 pl-3 border-l border-border min-w-0">
 								<span
 									role="img"
 									aria-label={lockTitle}
@@ -550,28 +579,38 @@ export default function PDFViewer() {
 								</span>
 
 								{isLocked && (
-									<span className="text-xs font-medium text-amber-800 bg-amber-100 border border-amber-200 rounded px-2 py-0.5">
+									<span
+										className="text-xs font-medium text-amber-800 bg-amber-100 border border-amber-200 rounded px-2 py-0.5 truncate max-w-[40ch] md:max-w-[60ch]"
+										title={lockText}
+									>
 										{lockText}
 									</span>
 								)}
 							</div>
 						</div>
 
-						<div className="flex items-center gap-3">
+						{/* Right group (fixed width; never wraps) */}
+						<div className="flex items-center gap-1.5 md:gap-3 shrink-0">
 							<Button
 								onClick={zoomOut}
-								className="h-auto"
+								size="icon"
+								variant="outline"
+								title="Zoom Out"
+								aria-label="Zoom Out"
 							>
-								Zoom Out
+								<ZoomOutIcon className="h-4 w-4" />
 							</Button>
-							<span className="text-sm text-muted-foreground font-medium">
+							<span className="text-sm text-muted-foreground font-medium whitespace-nowrap">
 								{Math.round(scale * 100)}%
 							</span>
 							<Button
 								onClick={zoomIn}
-								className="h-auto"
+								size="icon"
+								variant="outline"
+								title="Zoom In"
+								aria-label="Zoom In"
 							>
-								Zoom In
+								<ZoomInIcon className="h-4 w-4" />
 							</Button>
 						</div>
 					</div>

@@ -1,4 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import {
+	useState,
+	useEffect,
+	useCallback,
+	useLayoutEffect,
+	useRef,
+} from "react";
 
 import TTSService from "../TTSService";
 import Avatar from "../Avatar";
@@ -10,12 +16,15 @@ import { generateFeedbackMultipart } from "../services/api";
 import { INTERVENTION_STATES } from "../constants";
 
 function IncomingChatMessages({
-	messages,
-	interventionState,
-	feedbackGenerated,
+	answerActive,
 	batchStartIndex = 0,
+	feedbackGenerated,
+	interventionState,
+	isSpeaking,
+	messages,
 }) {
-	const listRef = useRef(null);
+	const endRef = useRef(null);
+	const didMountRef = useRef(false);
 
 	let messageContent = null;
 	const vcIsQuestioning = interventionState === INTERVENTION_STATES.questioning;
@@ -36,17 +45,28 @@ function IncomingChatMessages({
 		const messagesToShow =
 			n > 0 && !studentPresenting ? sinceBatch.slice(-n) : [];
 
-		messageContent = messagesToShow.map(({ role, content, pending, id }) => {
-			if (pending) {
+		const lastVisible = messagesToShow[messagesToShow.length - 1];
+		const lastVisibleId = lastVisible?.id;
+
+		messageContent = messagesToShow.map(({ content, pending, id }) => {
+			// Show loader while the message is still being prepared by the backend.
+			// Also show the same loader for the *newest assistant message* while we're in questioning
+			// but TTS hasn't started speaking yet.
+			const showPreparing =
+				pending ||
+				(vcIsQuestioning &&
+					id === lastVisibleId &&
+					!isSpeaking &&
+					!answerActive);
+
+			if (showPreparing) {
 				return (
 					<div
 						key={id}
-						className="mt-2 flex items-center gap-2 pl-10"
+						className="mt-2 self-center flex items-center gap-2"
 					>
 						<div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 border-t-transparent animate-spin" />
-						<span className="text-sm text-muted-foreground">
-							Preparing question…
-						</span>
+						<span className="text-muted-foreground">Preparing question…</span>
 					</div>
 				);
 			}
@@ -64,22 +84,23 @@ function IncomingChatMessages({
 		});
 	}
 
-	useEffect(() => {
-		const rafId = requestAnimationFrame(() => {
-			const el = listRef.current;
-			if (el) el.scrollTop = el.scrollHeight;
-		});
-
-		return () => cancelAnimationFrame(rafId);
-	}, [messages?.length, interventionState]);
+	useLayoutEffect(() => {
+		const behavior = didMountRef.current ? "smooth" : "auto";
+		endRef.current?.scrollIntoView({ behavior, block: "end" });
+		didMountRef.current = true;
+	}, [
+		messages.length,
+		isSpeaking,
+		interventionState,
+		batchStartIndex,
+		answerActive,
+	]);
 
 	return (
-		<div className="min-h-0">
-			<div
-				ref={listRef}
-				className="flex-1 p-5 overflow-y-auto flex flex-col gap-4 min-h-0"
-			>
+		<div className="flex-1 min-h-0 flex flex-col">
+			<div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-4">
 				{messageContent}
+				<div ref={endRef} />
 			</div>
 		</div>
 	);
@@ -98,7 +119,7 @@ function GeneratedFeedback({
 	let status = null;
 	if (isLoading && !feedbackGenerated) {
 		return (
-			<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center justify-center">
+			<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center justify-center shrink-0">
 				<span className="text-sm text-muted-foreground font-medium">
 					Generating feedback...
 				</span>
@@ -106,7 +127,7 @@ function GeneratedFeedback({
 		);
 	} else if (genError) {
 		return (
-			<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center justify-center">
+			<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center justify-center shrink-0">
 				<span className="mr-2">❌</span>
 				<span className="text-sm text-destructive font-medium">
 					Failed to generate feedback...
@@ -115,7 +136,7 @@ function GeneratedFeedback({
 		);
 	} else if (feedbackGenerated) {
 		return (
-			<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center justify-center">
+			<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center justify-center shrink-0">
 				<span className="mr-2">✅</span>
 				<a
 					href="/feedback"
@@ -135,7 +156,7 @@ function GeneratedFeedback({
 	}
 
 	return (
-		<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center gap-2">
+		<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center gap-2 shrink-0">
 			<span className="text-sm font-medium">Questions Completed</span>
 			{status}
 		</div>
@@ -143,6 +164,8 @@ function GeneratedFeedback({
 }
 
 function VcChatContainer({
+	answerActive,
+	batchStartIndex,
 	feedbackGenerated,
 	genError,
 	interventionState,
@@ -152,14 +175,21 @@ function VcChatContainer({
 	questionsAsked,
 	questionsTarget,
 	stopCurrentAudio,
-	batchStartIndex,
 }) {
 	let vcDisplay = null;
 	const vcIsQuestioning = interventionState === INTERVENTION_STATES.questioning;
 
 	if (vcIsQuestioning) {
 		const totalQuestions = questionsTarget || 2;
-		const vcQuestionsText = `VC Questions (${questionsAsked}/${totalQuestions})`;
+
+		// Bump the visible count while the current question is being asked (TTS speaking)
+		// or while the student is answering (answer window active).
+		let displayAsked = questionsAsked;
+		if (isSpeaking || answerActive) {
+			displayAsked = Math.min(totalQuestions, questionsAsked + 1);
+		}
+
+		const vcQuestionsText = `VC Questions (${displayAsked}/${totalQuestions})`;
 
 		vcDisplay = (
 			<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center gap-2">
@@ -180,7 +210,7 @@ function VcChatContainer({
 
 	return (
 		<div className="flex flex-col min-h-0 flex-1">
-			<div className="px-5 py-4 border-b border-border text-center">
+			<div className="px-5 py-4 border-b border-border text-center shrink-0">
 				<h1 className="text-base font-semibold">VC Mentor</h1>
 			</div>
 
@@ -194,10 +224,12 @@ function VcChatContainer({
 			/>
 
 			<IncomingChatMessages
+				answerActive={answerActive}
 				batchStartIndex={batchStartIndex}
 				messages={messages}
 				interventionState={interventionState}
 				feedbackGenerated={feedbackGenerated}
+				isSpeaking={isSpeaking}
 			/>
 		</div>
 	);
@@ -207,6 +239,7 @@ export default function ChatApp() {
 	const { sessionId, studentName } = useSession();
 	const { clearCheckpoint } = useCheckpoint();
 	const {
+		answerActive,
 		batchStartIndex,
 		getLatestRecording,
 		interventionState,
@@ -319,7 +352,7 @@ export default function ChatApp() {
 	};
 
 	return (
-		<div className="w-full flex-1 min-h-0 flex flex-col">
+		<div className="w-full flex-1 min-h-0 flex flex-col overflow-hidden">
 			<Avatar
 				isSpeaking={avatarState.isSpeaking}
 				isLoading={avatarState.isLoading}
@@ -327,8 +360,9 @@ export default function ChatApp() {
 			/>
 
 			<VcChatContainer
-				feedbackGenerated={feedbackGenerated}
+				answerActive={answerActive}
 				batchStartIndex={batchStartIndex}
+				feedbackGenerated={feedbackGenerated}
 				genError={genError}
 				interventionState={interventionState}
 				isLoading={isLoading}
