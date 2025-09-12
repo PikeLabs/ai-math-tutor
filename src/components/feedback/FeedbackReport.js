@@ -10,7 +10,6 @@ import {
 
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
-import { cn } from "../../lib/utils";
 
 function getSlideKey(slide) {
 	const parts = [
@@ -496,7 +495,7 @@ export default function FeedbackReport({ feedback }) {
 						<SlideSection
 							key={getSlideKey(slide)}
 							slide={slide}
-							fallbackTranscript={structuredFallback}
+							structuredFallback={structuredFallback}
 							onImageClick={handleImageClick}
 						/>
 					))}

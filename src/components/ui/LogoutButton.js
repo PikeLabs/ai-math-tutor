@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import { Button } from "../ui/button";
 import { useAuth } from "../../hooks/useAuth";
+import { cn } from "../../lib/utils";
 
 export default function LogoutButton({ className = "" }) {
 	const [busy, setBusy] = React.useState(false);
@@ -32,7 +33,7 @@ export default function LogoutButton({ className = "" }) {
 			disabled={busy || loading}
 			title="Sign out"
 			variant="outline"
-			className={["h-auto inline-flex items-center gap-2", className].join(" ")}
+			className={cn("h-auto inline-flex items-center gap-2", className)}
 		>
 			{busy ? "Signing out…" : "Sign out"}
 		</Button>
