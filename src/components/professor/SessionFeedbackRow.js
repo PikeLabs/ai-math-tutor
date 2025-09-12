@@ -10,7 +10,7 @@ import { TableRow, TableCell } from "../ui/table";
 import { Button } from "../ui/button";
 import { Alert, AlertTitle, AlertDescription } from "../ui/alert";
 
-const FEEDBACK_TABLE_COLUMNS = 5;
+const FEEDBACK_TABLE_COLUMNS = 4;
 
 function DropDownContainer({
 	toggleOpen,
@@ -88,7 +88,6 @@ function DropDownButton({ toggleOpen, onClick }) {
 			aria-label={ariaLabel}
 		>
 			<Chevron open={toggleOpen} />
-			<span>Details</span>
 		</Button>
 	);
 }
@@ -175,8 +174,11 @@ function SessionFeedbackDetails({ session }) {
 	// const presentationScore = feedback?.presentationScore || "—";
 	const studentName = session.student?.name || "—";
 
-	const animMaxHeight = animReady && toggleOpen ? "max-h-[2000px]" : "max-h-0";
-	const animHeightClass = `transition-[max-height] duration-300 ease-in-out overflow-hidden ${animMaxHeight}`;
+	const animMaxHeight = animReady && toggleOpen ? "max-h-[9999px]" : "max-h-0";
+	const animHeightClass = `transition-[max-height] duration-300 ease-in-out ${
+		toggleOpen ? "overflow-visible" : "overflow-hidden"
+	} ${animMaxHeight}`;
+
 	const animOpacity = toggleOpen ? "opacity-100" : "opacity-0";
 	const animOpacityClass = `p-4 transition-opacity duration-300 bg-card text-foreground ${animOpacity}`;
 
@@ -184,16 +186,16 @@ function SessionFeedbackDetails({ session }) {
 		<>
 			{/* Collapsed row */}
 			<TableRow className="w-full border-b border-border">
-				<TableCell className="py-2 text-sm font-medium">
-					<DropDownButton
-						toggleOpen={toggleOpen}
-						onClick={handleDropdownToggle}
-					/>
-				</TableCell>
-
 				{/* Student */}
 				<TableCell className="py-2 text-sm font-medium text-foreground">
-					{studentName}
+					<div className="flex flex-row items-center gap-2">
+						<DropDownButton
+							toggleOpen={toggleOpen}
+							onClick={handleDropdownToggle}
+						/>
+
+						{studentName}
+					</div>
 				</TableCell>
 
 				{/* Created */}
@@ -245,7 +247,7 @@ export default function SessionFeedbackRow({ rows = [], busy = false }) {
 			<TableRow className="w-full border-b border-border">
 				<TableCell
 					colSpan={FEEDBACK_TABLE_COLUMNS}
-					className="py-4 text-center text-sm text-muted-foreground"
+					className="py-4 text-center text-lg text-muted-foreground"
 				>
 					{rowContent}
 				</TableCell>
