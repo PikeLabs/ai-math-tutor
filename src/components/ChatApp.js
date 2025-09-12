@@ -181,7 +181,15 @@ function VcChatContainer({
 
 	if (vcIsQuestioning) {
 		const totalQuestions = questionsTarget || 2;
-		const vcQuestionsText = `VC Questions (${questionsAsked}/${totalQuestions})`;
+
+		// Bump the visible count while the current question is being asked (TTS speaking)
+		// or while the student is answering (answer window active).
+		let displayAsked = questionsAsked;
+		if (isSpeaking || answerActive) {
+			displayAsked = Math.min(totalQuestions, questionsAsked + 1);
+		}
+
+		const vcQuestionsText = `VC Questions (${displayAsked}/${totalQuestions})`;
 
 		vcDisplay = (
 			<div className="mt-3 mx-5 rounded-md border border-border bg-muted/50 px-3 py-2 flex items-center gap-2">

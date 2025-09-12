@@ -111,8 +111,8 @@ function RecordingBar({
 			<>
 				<div className="md:text-base font-medium">Recording Paused</div>
 				<PausedIcon
-					className="text-muted-foreground"
-					size={20}
+					className="ml-3 text-muted-foreground"
+					size={25}
 				/>
 				<span className="ml-3 text-sm md:text-base font-medium text-muted-foreground">
 					{formattedTime}
@@ -195,6 +195,7 @@ function AdvanceSlideButton({
 		: isReviewingPast
 		? "Forward"
 		: "Next";
+
 	const visualVariant = disableButton ? "outline" : "default";
 	const onClickHandler = isLastPage ? handleFinishButton : handleNextPage;
 
