@@ -62,6 +62,7 @@ export default function AppProvider({ children, sessionId }) {
 	// Answer-window (countdown) state
 	const answerStartRef = useRef(null); // already present (used for QA ranges)
 	const answerDefaultSecondsRef = useRef(30); // default countdown per requirement
+	const awaitingQuestionSpeechRef = useRef(false);
 	const answerWindowOpenRef = useRef(false);
 	const completingBatchRef = useRef(false);
 	const followUpAskedRef = useRef(false);
@@ -150,7 +151,14 @@ export default function AppProvider({ children, sessionId }) {
 
 				if (data?.response) {
 					finalizeAssistantMessage(pendingId, data.response);
-					questionInFlightRef.current = true; // arm answer window for when TTS stops
+
+					// Arm: a new question is queued. We haven't heard speaking start yet.
+					questionInFlightRef.current = true;
+					awaitingQuestionSpeechRef.current = true;
+
+					// Clear any stale "AI paused me" from previous lines.
+					pausedByAIRef.current = false;
+
 					TTSService.speak(data.response);
 				} else {
 					finalizeAssistantMessage(pendingId, "...");
@@ -252,7 +260,7 @@ export default function AppProvider({ children, sessionId }) {
 			}
 		} else {
 			// optional debug
-			console.log("[pause] skipped — no active recorder");
+			console.warn("[pause] skipped — no active recorder");
 		}
 	}, [mediaRecorder, recordingTimer]);
 
@@ -469,6 +477,11 @@ export default function AppProvider({ children, sessionId }) {
 
 	const handleSlideLockTriggered = useCallback(
 		async (slideNumber, isLastBatch = false) => {
+			// Reset TTS gating so stale flags from prior lines can't leak into the new batch.
+			pausedByAIRef.current = false;
+			questionInFlightRef.current = false;
+			awaitingQuestionSpeechRef.current = false;
+
 			// Always pause so nothing leaks into Q&A
 			if (isRecording && !isPaused) {
 				pauseRecording();
@@ -511,7 +524,7 @@ export default function AppProvider({ children, sessionId }) {
 
 			// Trigger AI intervention with context and recording
 			await handleAIIntervention(slideRange);
-			questionInFlightRef.current = true;
+			// questionInFlightRef.current = true;
 		},
 		[
 			handleAIIntervention,
@@ -581,11 +594,13 @@ export default function AppProvider({ children, sessionId }) {
 		}
 	}, [sessionId, readCheckpoint]);
 
-	// Centralized TTS → pause/resume
-	// TTS listener: when VC stops speaking, resume + arm the VAD
 	useEffect(() => {
 		const onTTS = (state) => {
+			// When VC actually starts speaking for the current question:
 			if (state?.isSpeaking) {
+				if (awaitingQuestionSpeechRef.current) {
+					awaitingQuestionSpeechRef.current = false;
+				}
 				if (recRef.current && !pausedRef.current) {
 					pauseRecording?.();
 				}
@@ -593,23 +608,27 @@ export default function AppProvider({ children, sessionId }) {
 				return;
 			}
 
-			// Only open the answer window when a *question's* speech just ended.
+			// Only resume + open answer window after we've *observed* speaking for this question.
 			if (
 				pausedByAIRef.current &&
+				!awaitingQuestionSpeechRef.current &&
 				questionInFlightRef.current &&
 				interventionRef.current === INTERVENTION_STATES.questioning
 			) {
 				pausedByAIRef.current = false;
-				questionInFlightRef.current = false; // consume the in-flight question
+				questionInFlightRef.current = false;
 
 				if (pausedRef.current) {
 					resumeRecording?.();
 				}
 
-				startAnswerWindow();
+				setTimeout(() => {
+					startAnswerWindow();
+				}, 0);
 			}
 		};
 
+		// ✅ Register the listener (was missing)
 		TTSService.addListener(onTTS);
 		return () => TTSService.removeListener(onTTS);
 	}, [pauseRecording, resumeRecording, startAnswerWindow]);
