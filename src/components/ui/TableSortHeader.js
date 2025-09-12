@@ -1,25 +1,41 @@
+import { Button } from "../ui/button";
+import { cn } from "../../lib/utils";
+
 export default function SortHeader({
 	field,
 	label,
 	sortField,
-	sortDir,
+	sortDir = "asc",
 	onSortChange,
-	className,
+	className = "",
 }) {
 	const isActive = sortField === field;
-	const arrow = !isActive ? "⇅" : sortDir === "asc" ? "↑" : "↓";
+	const nextDir = isActive && sortDir === "asc" ? "desc" : "asc";
+	const indicator = isActive ? (sortDir === "asc" ? "▲" : "▼") : "⇅";
+	// const indicator = !isActive ? "⇅" : sortDir === "asc" ? "↑" : "↓";
+
+	const handleClick = (e) => {
+		e.preventDefault();
+		onSortChange?.(field);
+	};
+
 	return (
-		<th
-			className={`cursor-pointer select-none ${className || ""}`}
-			onClick={() => onSortChange(field)}
-			aria-sort={
-				isActive ? (sortDir === "asc" ? "ascending" : "descending") : "none"
-			}
-			scope="col"
+		<Button
+			type="button"
+			variant="ghost"
+			size="sm"
+			onClick={handleClick}
+			className={cn(
+				"h-auto px-0 inline-flex items-center gap-1 underline-offset-4 hover:underline",
+				"bg-transparent hover:bg-transparent active:bg-transparent",
+				"focus-visible:ring-0 focus-visible:ring-offset-0",
+				className
+			)}
+			aria-pressed={isActive ? "true" : "false"}
+			title={`Sort by ${label} (${nextDir})`}
 		>
-			<span className={isActive ? "font-semibold" : ""}>
-				{label} <span className="opacity-60">{arrow}</span>
-			</span>
-		</th>
+			<span className="text-foreground/80">{label}</span>
+			<span aria-hidden="true">{indicator}</span>
+		</Button>
 	);
 }
